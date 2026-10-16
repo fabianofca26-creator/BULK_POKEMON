@@ -231,6 +231,8 @@ const ICONES = {
   imprimir: "M7 9V3h10v6M7 17H4v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6h-3M7 14h10v7H7z",
   trocar: "M4 9h15l-3-3M20 15H5l3 3",
   ok: "M5 12.5l4.5 4.5L19 7.5",
+  subir: "M12 19V5M6 11l6-6 6 6",
+  descer: "M12 5v14M6 13l6 6 6-6",
   fechar: "M6 6l12 12M18 6L6 18",
   carrinho: "M3 4h2.5l2.2 11h10.1L20 8H6.4" + circ(9.5, 19.5, 1.2) + circ(16.5, 19.5, 1.2),
   repetir: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"
@@ -586,8 +588,8 @@ function abrirCarta(id) {
       <summary class="grp">Suas cópias (${c.qty})</summary><p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}</details>` : ""}
     ${dk ? `<div class="grp">Neste deck: ${dk.list[id] || 0} · side: ${dk.side?.[id] || 0}</div>
       <div class="row" style="margin-bottom:8px">
-        ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">↓ Passar 1 pro side</button>` : ""}
-        ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">↑ Passar 1 pro deck</button>` : ""}</div>
+        ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">${ic("descer")} Passar 1 pro side</button>` : ""}
+        ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">${ic("subir")} Passar 1 pro deck</button>` : ""}</div>
       ${dk.list[id] ? `<div class="row"><span>${ic("imprimir")} Proxies neste deck</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}` : ""}
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
     ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
@@ -848,7 +850,8 @@ function telaDeck() {
     const muda = side ? "mudaSide" : "mudaDeck";
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}${tenho}</div></div>
-      <div class="qt">${side ? `<button title="Passar 1 pro deck" onclick="moverSide('${esc(id)}',-1)">↑</button>` : ""}<button onclick="${muda}('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="${muda}('${esc(id)}',1)">+</button></div></div>`;
+      <div class="qt">${side ? `<button title="Passar 1 pro deck" aria-label="Passar 1 pro deck" onclick="moverSide('${esc(id)}',-1)">${ic("subir")}</button>`
+        : `<button title="Passar 1 pro side" aria-label="Passar 1 pro side" onclick="moverSide('${esc(id)}',1)">${ic("descer")}</button>`}<button onclick="${muda}('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="${muda}('${esc(id)}',1)">+</button></div></div>`;
   };
   const html = blocos(linhas.map(({ id, n, c }) => linhaDeck(id, n, c, false)));
   const nSide = sides.reduce((s, x) => s + x.n, 0);
@@ -867,7 +870,7 @@ function telaDeck() {
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${linhas.length ? html : `<p class="muted">Deck vazio.</p>`}</div>
     <div class="grp">Side deck · techs (${nSide}) · fora das ${st.total}, não ocupam cartas</div>
-    <div class="card">${nSide ? blocos(sides.map(({ id, n, c }) => linhaDeck(id, n, c, true))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. A seta ↑ passa uma cópia pro deck.</p>`}
+    <div class="card">${nSide ? blocos(sides.map(({ id, n, c }) => linhaDeck(id, n, c, true))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. Nas cartas do deck, a seta pra baixo passa uma cópia pra cá; aqui, a seta pra cima devolve pro deck.</p>`}
       <button class="btn sec" style="margin-top:8px" onclick="abrirBusca('side')">＋ Tech no side</button></div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
     <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {

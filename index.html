@@ -75,8 +75,12 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .en{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
 .ebtn{width:38px;height:38px;border-radius:50%;border:0;cursor:pointer;font-size:18px;flex:none}
 .tag.oc{background:#e3edfb;color:#1d4f91}
+.tag.cm{background:#dff3f1;color:#0f5f58}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.seg .btn{padding:10px 4px;font-size:14px;width:100%!important;margin:0!important}
+@media (max-width:520px){ .seg{grid-template-columns:1fr 1fr} }
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
-@media (prefers-color-scheme:dark){ .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
+@media (prefers-color-scheme:dark){ .tag.cm{background:#10302d;color:#8fe0d6} .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
 .tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
 #cpBox summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between}
 #cpBox summary::-webkit-details-marker{display:none}
@@ -233,6 +237,7 @@ const ICONES = {
   imprimir: "M7 9V3h10v6M7 17H4v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6h-3M7 14h10v7H7z",
   trocar: "M4 9h15l-3-3M20 15H5l3 3",
   ok: "M5 12.5l4.5 4.5L19 7.5",
+  caminhao: "M2 6h12v10H2zM14 9h4.5L22 12.5V16h-8" + circ(6, 18, 1.8) + circ(17, 18, 1.8),
   subir: "M12 19V5M6 11l6-6 6 6",
   descer: "M12 5v14M6 13l6 6 6-6",
   fechar: "M6 6l12 12M18 6L6 18",
@@ -586,6 +591,8 @@ function abrirCarta(id) {
     <h2>${esc(c.name)}${regTag(c)}</h2>
     <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
     <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
+    ${somaCaminho(id) ? `<p class="sub" style="margin:-6px 0 10px"><span class="tag cm">${somaCaminho(id)} a caminho</span> ${esc([...new Set(D.caminho.filter(e => e.card === id).map(e => e.de).filter(Boolean))].join(", "))}</p>` : ""}
+    <button class="btn sec" style="margin-bottom:12px" onclick="comprei('${esc(id)}')&&(render(),abrirCarta('${esc(id)}'))">${ic("caminhao")} Comprei, está a caminho</button>
     <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
       <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
     <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço de mercado anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Preço de mercado: consulte na Liga e anote aqui."}</p>
@@ -696,7 +703,7 @@ function abrirBusca(modo) {
   document.querySelectorAll(".anotar").forEach(l => l.classList.toggle("hide", modo !== "estoque"));
   document.querySelectorAll(".anotar input").forEach(x => x.checked = !!D.anotar);
   modoBusca = modo;
-  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck" }[modo];
+  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck", caminho: "Qual carta você comprou?" }[modo];
   $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
   $("dlgBusca").showModal(); $("q").focus();
 }
@@ -734,6 +741,7 @@ async function escolher(id) {
     if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); salvar(); return anotarNova(id); }
     else if (modoBusca === "troca") { if (trocar(trocaDe, id)) { $("dlgBusca").close(); render(); abrirCarta(id); } return; }
     else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
+    else if (modoBusca === "caminho") { if (comprei(id)) { $("dlgBusca").close(); render(); } return; }
     else if (modoBusca === "side") { const s = deckAberto.side ??= {}; s[id] = (s[id] || 0) + 1; toast(`${c.name}: ${s[id]} no side`); }
     else { const d = deckAberto; d.list[id] = (d.list[id] || 0) + 1; toast(`${c.name}: ${d.list[id]} no deck`); }
     salvar();
@@ -765,24 +773,26 @@ function telaDecks() {
 function situacao(d, U, id, n, extra = 0) {
   const c = D.cards[id], g = grupo(d);
   const livre = Math.max(0, c.qty - usado(U, id, g) - extra), falta = Math.max(0, n - livre);
-  const naoTenho = Math.min(falta, Math.max(0, n + extra - c.qty)), ocupada = falta - naoTenho;
+  const semTer = Math.min(falta, Math.max(0, n + extra - c.qty)), ocupada = falta - semTer;
+  // ponytail: o que está a caminho cobre o "não tenho" de cada deck sem dividir entre decks (dois decks podem contar a mesma encomenda)
+  const aCaminho = Math.min(semTer, somaCaminho(id)), naoTenho = semTer - aCaminho;
   // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
   const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
-  return { falta, naoTenho, ocupada, comOutro, deOutro, outros: decksDe(U, id, g) };
+  return { falta, naoTenho, aCaminho, ocupada, comOutro, deOutro, outros: decksDe(U, id, g) };
 }
 const tagsSituacao = (id, s) => !s.falta && !s.comOutro ? `<span class="tag ok">${ic("ok")} tenho</span>`
-  : `${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} ocupada${s.ocupada > 1 ? "s" : ""} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
+  : `${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.aCaminho ? `<span class="tag cm">${s.aCaminho} a caminho</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} ocupada${s.ocupada > 1 ? "s" : ""} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
 function statusDeck(d, U) {
-  let total = totalEnergia(d), naoTenho = 0, ocupada = 0, rot = 0, px = 0;
+  let total = totalEnergia(d), naoTenho = 0, ocupada = 0, aCaminho = 0, rot = 0, px = 0;
   for (const [id, n] of Object.entries(d.list)) {
     const p = d.proxy?.[id] || 0, s = situacao(d, U, id, n - p); total += n; px += p;
-    naoTenho += s.naoTenho; ocupada += s.ocupada;
+    naoTenho += s.naoTenho; ocupada += s.ocupada; aCaminho += s.aCaminho;
     if (!legal(D.cards[id])) rot += n;
   }
-  return { total, falta: naoTenho + ocupada, naoTenho, ocupada, rot, px };
+  return { total, falta: naoTenho + ocupada + aCaminho, naoTenho, ocupada, aCaminho, rot, px };
 }
 const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
-  : `${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} ocupada${st.ocupada > 1 ? "s" : ""}</span>` : ""}`)
+  : `${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.aCaminho ? `<span class="tag cm">${st.aCaminho} a caminho</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} ocupada${st.ocupada > 1 ? "s" : ""}</span>` : ""}`)
   + (st.px ? `<span class="tag px">${ic("imprimir")} ${st.px} proxy</span>` : "");
 // proxies marcadas no deck: nunca mais que as cópias da carta no deck
 function mudaProxy(id, n) {
@@ -870,7 +880,7 @@ function telaDeck() {
       : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh">${seletorCor(d.sleeve)}<b>${esc(d.sleeve)}</b><span class="muted" style="font-size:13px">toque na bolinha pra mudar a cor</span></div>
         <div class="sub">${(() => { const outros = D.decks.filter(x => x !== d && !x.rascunho && grupo(x) === g).map(x => esc(x.name)); return outros.length ? `Divide o sleeve com: <b>${outros.join(", ")}</b>` : "Sozinho nesse sleeve."; })()}</div></div>` : ""}
     ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck:
-      ${st.naoTenho ? `<b>${st.naoTenho}</b> você não tem` : ""}${st.naoTenho && st.ocupada ? " e " : ""}${st.ocupada ? `<b>${st.ocupada}</b> ${st.ocupada > 1 ? "estão ocupadas" : "está ocupada"} em outros decks` : ""}.
+      ${[st.naoTenho && `<b>${st.naoTenho}</b> você não tem`, st.aCaminho && `<b>${st.aCaminho}</b> a caminho`, st.ocupada && `<b>${st.ocupada}</b> ${st.ocupada > 1 ? "estão ocupadas" : "está ocupada"} em outros decks`].filter(Boolean).join(", ")}.
       ${st.naoTenho ? `<button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho as ${st.naoTenho}</button>` : ""}</div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${linhas.length ? html : `<p class="muted">Deck vazio.</p>`}</div>
@@ -1016,7 +1026,7 @@ async function exportarDeck() {
 }
 
 // ---------- compras ----------
-const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - c.qty })).filter(x => x.n > 0)
+const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - c.qty - somaCaminho(id) })).filter(x => x.n > 0)
   .sort((a, b) => a.c.name.localeCompare(b.c.name));
 // Sobrando: do Standard guarda D.guardar cópias (ou o que os decks usam, se for mais); rotacionada sem deck sobra toda.
 const sobrando = U => Object.entries(D.cards).map(([id, c]) => {
@@ -1028,13 +1038,43 @@ function somaPreco(itens) {
   const com = itens.filter(x => x.c.preco);
   return { valor: com.reduce((s, x) => s + x.c.preco * x.n, 0), sem: itens.length - com.length };
 }
+// ---------- a caminho: cartas compradas que ainda não chegaram ----------
+// Não contam como suas (nem livres, nem troca): só saem da lista de compras e aparecem como "a caminho" no deck.
+const somaCaminho = id => (D.caminho || []).filter(e => e.card === id).reduce((s, e) => s + e.n, 0);
+const numero = v => parseFloat(String(v ?? "").replace(/[^\d,.]/g, "").replace(",", ".")) || 0;
+function comprei(id, sugestao = 1) {
+  const c = D.cards[id];
+  const n = parseInt(prompt(`Quantas ${c.name} você comprou?`, sugestao), 10); if (!(n > 0)) return false;
+  const de = prompt("Comprou de onde? (loja, site, pessoa — pode deixar vazio)", D.ultLoja || ""); if (de === null) return false;
+  const pago = prompt("Quanto pagou por cópia, em R$? (pode deixar vazio)", c.preco ? c.preco.toFixed(2).replace(".", ",") : ""); if (pago === null) return false;
+  (D.caminho ??= []).push({ id: Date.now().toString(36), card: id, n, de: de.trim(), pago: numero(pago), data: new Date().toISOString().slice(0, 10) });
+  if (de.trim()) D.ultLoja = de.trim();
+  salvar(); toast(`${n}× ${c.name} a caminho`);
+  return true;
+}
+// chegou: entra no estoque e as cópias novas já vêm com o valor pago anotado
+function chegou(eid) {
+  const e = D.caminho.find(x => x.id === eid), c = D.cards[e.card];
+  copias(c).push(...Array.from({ length: e.n }, () => e.pago ? { pago: e.pago } : {})); c.qty += e.n;
+  D.caminho = D.caminho.filter(x => x !== e); salvar(); render();
+  toast(`${e.n}× ${c.name} no estoque (agora ${c.qty})`);
+}
+function cancelarCaminho(eid) {
+  const e = D.caminho.find(x => x.id === eid);
+  if (!confirm(`Cancelar ${e.n}× ${D.cards[e.card].name}${e.de ? " de " + e.de : ""}? A carta volta pra lista de compras.`)) return;
+  D.caminho = D.caminho.filter(x => x !== e); salvar(); render();
+}
+const desde = data => { const d = Math.round((Date.now() - new Date(data + "T12:00")) / 864e5); return d <= 0 ? "comprada hoje" : `há ${d} dia${d > 1 ? "s" : ""}`; };
+
 let lista = "comprar";
-const LISTAS = { comprar: [ic("carrinho") + " Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: [ic("repetir") + " Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: [ic("imprimir") + " Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"] };
-const itensLista = U => lista === "comprar" ? faltando(U) : lista === "troca" ? sobrando(U) : proxies().filter(x => x.n > 0);
+const LISTAS = { comprar: [ic("carrinho") + " Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: [ic("repetir") + " Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: [ic("imprimir") + " Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"], caminho: [ic("caminhao") + " A caminho", "A caminho", "a caminho", "nada a caminho"] };
+const itensLista = U => lista === "comprar" ? faltando(U) : lista === "troca" ? sobrando(U) : lista === "proxy" ? proxies().filter(x => x.n > 0)
+  : (D.caminho || []).map(e => ({ id: e.card, c: D.cards[e.card], n: e.n, e })).sort((a, b) => a.e.data.localeCompare(b.e.data));
+const precoCaminho = itens => ({ valor: itens.reduce((s, x) => s + x.e.pago * x.n, 0), sem: itens.filter(x => !x.e.pago).length });
 function telaCompras() {
-  const U = calcUso(), itens = itensLista(U), [, titulo, frase, vazio] = LISTAS[lista], px = lista === "proxy";
+  const U = calcUso(), itens = itensLista(U), [, titulo, frase, vazio] = LISTAS[lista], px = lista === "proxy", cm = lista === "caminho";
   vistos = itens.map(x => x.id);
-  const total = itens.reduce((s, x) => s + x.n, 0), p = px ? { valor: 0 } : somaPreco(itens);
+  const total = itens.reduce((s, x) => s + x.n, 0), p = px ? { valor: 0 } : cm ? precoCaminho(itens) : somaPreco(itens);
   const valor = p.valor ? ` · ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "";
   $("titulo").textContent = titulo;
   $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} ${frase}${valor}` : px && proxies().some(x => x.imp) ? "tudo impresso" : vazio;
@@ -1042,12 +1082,19 @@ function telaCompras() {
     : usado(U, id) ? `${usado(U, id)} em deck` : legal(c) ? `guardando ${Math.min(c.qty, D.guardar ?? 4)}` : "rotacionada, nenhum deck usa";
   const preco = (c, n) => c.preco && !px ? brl(c.preco * n) : "";
   const item = x => {
-    const { id, c, n } = x;
+    const { id, c, n, e } = x;
+    if (cm) {
+      const sub = `${e.de ? "de " + esc(e.de) + " · " : ""}${e.pago ? brl(e.pago * n) + " · " : ""}${desde(e.data)}`;
+      if (grade()) return tile(id, c, n + "×", `<span class="muted">${sub}</span>`);
+      return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
+        <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${sub}</div></div>
+        <div class="qt"><b style="font-size:18px">${n}×</b><button class="tenho" title="Chegou" aria-label="Chegou" style="margin:0 0 0 6px;padding:5px 8px" onclick="chegou('${e.id}')">${ic("ok")}</button><button title="Cancelar compra" aria-label="Cancelar compra" onclick="cancelarCaminho('${e.id}')">${ic("fechar")}</button></div></div>`;
+    }
     if (grade()) return tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}${preco(c, 1) ? " · " + preco(c, 1) : ""}</span>`);
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
       <div class="sub">${preco(c, n) ? `<b>${preco(c, n)}</b> · ` : ""}${esc(nota(x))}</div></div>
-      <div class="qt"><b style="font-size:18px">${n}×</b>${px ? `<button class="tenho" title="Já imprimi" aria-label="Já imprimi" style="margin:0 0 0 6px;padding:5px 8px" onclick="marcarImpressa('${esc(id)}',${n})">${ic("ok")}</button><button title="Tirar das proxies" aria-label="Tirar das proxies" onclick="tirarProxy('${esc(id)}')">${ic("fechar")}</button>` : ""}</div></div>`;
+      <div class="qt"><b style="font-size:18px">${n}×</b>${lista === "comprar" ? `<button class="tenho" title="Comprei" aria-label="Comprei" style="margin:0 0 0 6px;padding:5px 8px" onclick="comprei('${esc(id)}',${n})&&render()">${ic("ok")}</button>` : ""}${px ? `<button class="tenho" title="Já imprimi" aria-label="Já imprimi" style="margin:0 0 0 6px;padding:5px 8px" onclick="marcarImpressa('${esc(id)}',${n})">${ic("ok")}</button><button title="Tirar das proxies" aria-label="Tirar das proxies" onclick="tirarProxy('${esc(id)}')">${ic("fechar")}</button>` : ""}</div></div>`;
   };
   // proxies já impressas ficam numa seção à parte, com "desfazer" (tira uma)
   const prontas = px ? proxies().filter(x => x.imp > 0) : [];
@@ -1057,16 +1104,18 @@ function telaCompras() {
   const vazios = {
     comprar: "Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.",
     troca: `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda nos Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`,
-    proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “Proxy” numa carta que falta."
+    proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “Proxy” numa carta que falta.",
+    caminho: "Nenhuma carta a caminho. Na lista de compras, o check marca a carta como comprada."
   };
-  $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">` +
-      Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" style="padding:10px 4px;font-size:14px" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
+  $("tela").innerHTML = `<div class="seg">` +
+      Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
+    (cm ? `<button class="btn sec" style="margin-bottom:12px" onclick="abrirBusca('caminho')">＋ Comprei outra carta</button>` : "") +
     (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()" title="Marcar todas como impressas">${ic("ok")} Todas</button>` : ""}</div>
       <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${px && prontas.length ? "Tudo impresso." : vazios[lista]}</p>`) + impressas;
 }
 function copiarLista() {
-  const itens = itensLista(calcUso()), px = lista === "proxy", p = px ? { valor: 0 } : somaPreco(itens);
-  const txt = itens.map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})${c.preco && !px ? " — " + brl(c.preco * n) : ""}`).join("\n")
+  const itens = itensLista(calcUso()), px = lista === "proxy", cm = lista === "caminho", p = px ? { valor: 0 } : cm ? precoCaminho(itens) : somaPreco(itens);
+  const txt = itens.map(({ c, n, e }) => `${n}x ${c.name} (${c.set} ${c.num})${cm ? (e.de ? " — " + e.de : "") + (e.pago ? " — " + brl(e.pago * n) : "") : c.preco && !px ? " — " + brl(c.preco * n) : ""}`).join("\n")
     + (p.valor ? `\nTotal: ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "");
   navigator.clipboard.writeText(txt).then(() => toast("Lista copiada"), () => toast("Não deu pra copiar"));
 }

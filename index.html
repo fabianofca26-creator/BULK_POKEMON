@@ -89,6 +89,11 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .navc{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .navc button{width:44px;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--card);font-size:20px;cursor:pointer;flex:none}
 .navc span{flex:1;text-align:center;font-size:13px;color:var(--tx3)}
+.ic{width:1.15em;height:1.15em;vertical-align:-.22em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.icobtn .ic{width:22px;height:22px;vertical-align:middle}
+nav .ic{width:22px;height:22px}
+.ensv{width:62%;height:62%}
+.res .en .ensv{width:55%;height:55%}
 .dot{display:inline-block;width:14px;height:14px;border-radius:50%;flex:none;vertical-align:-2px}
 .slh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .dk{padding:9px 0 2px;margin-top:8px;border-top:1px solid var(--line);cursor:pointer}
@@ -129,18 +134,18 @@ dialog h2{font-size:17px;margin-bottom:12px}
   <header>
     <div class="t"><h1 id="titulo">Estoque</h1><p id="sub"></p></div>
     <button class="icobtn" id="btnVista" onclick="D.vista = D.vista === 'grade' ? 'lista' : 'grade'; salvar(); render()" aria-label="Trocar visualização"></button>
-    <button class="icobtn nv-off" id="btnNuvem" onclick="D.driveCid ? sincronizar(true) : abrirAjustes()" aria-label="Google Drive">☁</button>
-    <button class="icobtn" onclick="abrirAjustes()" aria-label="Ajustes">⚙</button>
+    <button class="icobtn nv-off" id="btnNuvem" onclick="D.driveCid ? sincronizar(true) : abrirAjustes()" aria-label="Google Drive" data-ic="nuvem"></button>
+    <button class="icobtn" onclick="abrirAjustes()" aria-label="Ajustes" data-ic="ajustes"></button>
   </header>
-  <div id="avisoNuvem" class="card hide" style="cursor:pointer;background:var(--wa-bg);color:var(--wa-tx)" onclick="sincronizar(true)">☁ Toque aqui pra sincronizar com o Drive antes de mexer — assim você pega o que mudou no outro aparelho.</div>
+  <div id="avisoNuvem" class="card hide" style="cursor:pointer;background:var(--wa-bg);color:var(--wa-tx)" onclick="sincronizar(true)"><span data-ic="nuvem"></span> Toque aqui pra sincronizar com o Drive antes de mexer — assim você pega o que mudou no outro aparelho.</div>
   <main id="tela"></main>
 </div>
 
 <nav>
-  <button data-a="estoque" onclick="ir('estoque')"><span>🗃</span>Estoque</button>
-  <button data-a="decks" onclick="ir('decks')"><span>🃏</span>Decks</button>
-  <button data-a="emp" onclick="ir('emp')"><span>🤝</span>Empréstimos</button>
-  <button data-a="compras" onclick="ir('compras')"><span>🛒</span>Listas</button>
+  <button data-a="estoque" onclick="ir('estoque')"><span data-ic="estoque"></span>Estoque</button>
+  <button data-a="decks" onclick="ir('decks')"><span data-ic="decks"></span>Decks</button>
+  <button data-a="emp" onclick="ir('emp')"><span data-ic="emp"></span>Empréstimos</button>
+  <button data-a="compras" onclick="ir('compras')"><span data-ic="listas"></span>Listas</button>
 </nav>
 
 <!-- busca na base TCGdex (precisa de internet) -->
@@ -210,10 +215,45 @@ const KEY = "pkst_v1";
 // cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energias:{tipo:n},falhas:[linhas]}
 let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
 
+// Ícones desenhados aqui mesmo (SVG de traço, cor do texto): nada de emoji, funciona sem internet.
+const circ = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+const ICONES = {
+  estoque: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10",
+  decks: "M5 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM9 21h9a2 2 0 0 0 2-2V7",
+  emp: "M4 8h14l-3-3M20 16H6l3 3",
+  listas: "M9 6h11M9 12h11M9 18h11" + circ(4.5, 6, .6) + circ(4.5, 12, .6) + circ(4.5, 18, .6),
+  nuvem: "M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 11.2 3.5 3.5 0 0 0 7 18z",
+  ajustes: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" + circ(15, 6, 2) + circ(9, 12, 2) + circ(17, 18, 2),
+  grade: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  lista: "M4 6h16M4 12h16M4 18h16",
+  local: "M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" + circ(12, 10, 2.3),
+  colecao: "M4 4h5v16H4zM9 4h5v16H9zM15 5.5l4.5-1 3 14.5-4.5 1z",
+  imprimir: "M7 9V3h10v6M7 17H4v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6h-3M7 14h10v7H7z",
+  trocar: "M4 9h15l-3-3M20 15H5l3 3",
+  ok: "M5 12.5l4.5 4.5L19 7.5",
+  fechar: "M6 6l12 12M18 6L6 18",
+  carrinho: "M3 4h2.5l2.2 11h10.1L20 8H6.4" + circ(9.5, 19.5, 1.2) + circ(16.5, 19.5, 1.2),
+  repetir: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"
+};
+const ic = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONES[n]}"/></svg>`;
+
 // Energias básicas ficam no deck por tipo, fora do estoque. tipo -> [nome, cor, nº na coleção SVE, símbolo]
-// ponytail: símbolo é emoji parecido com o do tipo (funciona offline); trocar por SVG se quiser o desenho oficial
-const ENERGIAS = { G: ["Grama", "#3f9b45", 1, "🍃"], R: ["Fogo", "#e0522c", 2, "🔥"], W: ["Água", "#3a86d6", 3, "💧"], L: ["Raio", "#d9b21c", 4, "⚡"],
-  P: ["Psíquica", "#9a4fc2", 5, "👁️"], F: ["Luta", "#b0652f", 6, "👊"], D: ["Escuridão", "#3d3f55", 7, "🌙"], M: ["Metal", "#8e98a4", 8, "⚙️"], "?": ["básica (tipo?)", "#777", 0, "?"] };
+// Símbolos desenhados à mão em SVG (branco sobre a cor do tipo), lembrando os do jogo.
+const SIMBOLO = {
+  G: `<path d="M5 19C5 10 10.5 4.5 19.5 4.5 19.5 13.5 14 19 5 19z"/><path d="M5 19l9-9" stroke="currentColor" stroke-width="1.6" fill="none"/>`,
+  R: `<path d="M12 2.5c.6 3.6 5.5 5.6 5.5 11a5.5 5.5 0 0 1-11 0c0-3 1.6-4.4 2.4-6.6.9 1.3 1.6 2.4 1.6 4.1 1.3-2 1.8-4.6 1.5-8.5z"/>`,
+  W: `<path d="M12 2.5l6 9.2a6.6 6.6 0 1 1-12 0z"/>`,
+  L: `<path d="M13.5 2L5 13.5h6L9.8 22 19 9.8h-6.2z"/>`,
+  P: `<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><path d="${circ(12, 12, 3.4)}" fill="currentColor"/>`,
+  F: `<path d="M6 9.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2V15a5 5 0 0 1-5 5h-3a5 5 0 0 1-5-5z"/><path d="M9.5 7.5v4M13 7.5v4M16.5 7.5v4M6 13h4" stroke="currentColor" stroke-width="1.4" fill="none"/>`,
+  D: `<path d="M15.5 2.5a9.5 9.5 0 1 0 6 15.6A7.8 7.8 0 0 1 15.5 2.5z"/>`,
+  M: `<path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"/><path d="${circ(12, 12, 3.6)}" fill="currentColor"/>`,
+  "?": `<path d="M9 9a3 3 0 1 1 4.5 2.6c-1 .6-1.5 1.2-1.5 2.4M12 17.5v.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/>`
+};
+// o "currentColor" dos detalhes vazados é a cor do tipo (vem do style color do contêiner)
+const simbolo = t => `<svg class="ensv" viewBox="0 0 24 24" fill="#fff" style="color:${ENERGIAS[t][1]}" aria-hidden="true">${SIMBOLO[t]}</svg>`;
+const ENERGIAS = { G: ["Grama", "#3f9b45", 1], R: ["Fogo", "#e0522c", 2], W: ["Água", "#3a86d6", 3], L: ["Raio", "#d9b21c", 4],
+  P: ["Psíquica", "#9a4fc2", 5], F: ["Luta", "#b0652f", 6], D: ["Escuridão", "#3d3f55", 7], M: ["Metal", "#8e98a4", 8], "?": ["básica (tipo?)", "#777", 0] };
 const PALAVRA = { grass: "G", fire: "R", water: "W", lightning: "L", psychic: "P", fighting: "F", darkness: "D", metal: "M" };
 function tipoEnergia(l) {
   let m = l.match(/\{([GRWLPFDM])\}/i); if (m) return m[1].toUpperCase();
@@ -266,11 +306,11 @@ function copiarPraTodas(id) {
   salvar(); abrirCarta(id);
 }
 const pagoTotal = c => (c.copias || []).reduce((s, x) => s + (x.pago || 0), 0);
-// "2 Reverse · 📍 Pasta 1" — o que foi anotado nas cópias, pra mostrar na lista
+// "2 Reverse · em Pasta 1" — o que foi anotado nas cópias, pra mostrar na lista
 function resumoTexto(c) {
   const v = {}, locais = new Set();
   for (const x of c.copias || []) { if (x.v) v[x.v] = (v[x.v] || 0) + 1; if (x.local) locais.add(x.local); }
-  return [...Object.entries(v).map(([k, n]) => `${n} ${k}`), ...[...locais].map(l => "📍 " + l)].join(" · ");
+  return [...Object.entries(v).map(([k, n]) => `${n} ${k}`), ...[...locais].map(l => "em " + l)].join(" · ");
 }
 function resumoCopias(id) {
   const c = D.cards[id], el = $("cpResumo"); if (!el) return;
@@ -471,7 +511,7 @@ function agendarSync() {
 // ---------- telas ----------
 function ir(a) { aba = a; deckAberto = null; render(); scrollTo(0, 0); }
 function render() {
-  $("btnVista").textContent = grade() ? "☰" : "▦";
+  $("btnVista").innerHTML = ic(grade() ? "lista" : "grade");
   $("btnVista").classList.toggle("hide", aba === "emp" || (aba === "decks" && !deckAberto));
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.a === aba));
   ({ estoque: telaEstoque, decks: deckAberto ? telaDeck : telaDecks, compras: telaCompras, emp: telaEmp })[aba]();
@@ -507,7 +547,7 @@ function telaEstoque() {
       </select></div>
     <div class="row" style="margin-bottom:12px">
       <button class="btn" onclick="abrirBusca('estoque')">＋ Cadastrar carta</button>
-      <button class="btn sec" onclick="abrirPorColecao()">📚 Por coleção</button></div>
+      <button class="btn sec" onclick="abrirPorColecao()">${ic("colecao")} Por coleção</button></div>
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
@@ -548,9 +588,9 @@ function abrirCarta(id) {
       <div class="row" style="margin-bottom:8px">
         ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">↓ Passar 1 pro side</button>` : ""}
         ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">↑ Passar 1 pro deck</button>` : ""}</div>
-      ${dk.list[id] ? `<div class="row"><span>🖨 Proxies neste deck</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}` : ""}
+      ${dk.list[id] ? `<div class="row"><span>${ic("imprimir")} Proxies neste deck</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}` : ""}
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
-    ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">⇄ Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
+    ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
     <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
     <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
@@ -723,7 +763,7 @@ function situacao(d, U, id, n, extra = 0) {
   const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
   return { falta, naoTenho, ocupada, comOutro, deOutro, outros: decksDe(U, id, g) };
 }
-const tagsSituacao = (id, s) => !s.falta && !s.comOutro ? `<span class="tag ok">✓ tenho</span>`
+const tagsSituacao = (id, s) => !s.falta && !s.comOutro ? `<span class="tag ok">${ic("ok")} tenho</span>`
   : `${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} ocupada${s.ocupada > 1 ? "s" : ""} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
 function statusDeck(d, U) {
   let total = totalEnergia(d), naoTenho = 0, ocupada = 0, rot = 0, px = 0;
@@ -736,7 +776,7 @@ function statusDeck(d, U) {
 }
 const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
   : `${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} ocupada${st.ocupada > 1 ? "s" : ""}</span>` : ""}`)
-  + (st.px ? `<span class="tag px">🖨 ${st.px} proxy</span>` : "");
+  + (st.px ? `<span class="tag px">${ic("imprimir")} ${st.px} proxy</span>` : "");
 // proxies marcadas no deck: nunca mais que as cópias da carta no deck
 function mudaProxy(id, n) {
   const d = deckAberto, p = d.proxy ??= {};
@@ -780,9 +820,9 @@ function telaDeck() {
   const linhaDeck = (id, n, c, side) => {
     const p = side ? 0 : d.proxy?.[id] || 0;
     const s = situacao(d, U, id, n - p, side ? (d.list[id] || 0) - (d.proxy?.[id] || 0) : 0);
-    const st = (n - p ? tagsSituacao(id, s) : "") + (p ? `<span class="tag px" title="Tirar 1 proxy" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1)">🖨 ${p} proxy</span>` : "");
+    const st = (n - p ? tagsSituacao(id, s) : "") + (p ? `<span class="tag px" title="Tirar 1 proxy" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1)">${ic("imprimir")} ${p} proxy</span>` : "");
     const tenho = (s.naoTenho ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${s.naoTenho})">＋ Tenho ${s.naoTenho}</button>` : "")
-      + (!side && s.falta ? ` <button class="tenho px" onclick="event.stopPropagation();mudaProxy('${esc(id)}',${s.falta})">🖨 Proxy</button>` : "");
+      + (!side && s.falta ? ` <button class="tenho px" onclick="event.stopPropagation();mudaProxy('${esc(id)}',${s.falta})">${ic("imprimir")} Proxy</button>` : "");
     if (grade()) return tile(id, c, n, st + tenho);
     const muda = side ? "mudaSide" : "mudaDeck";
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
@@ -810,15 +850,15 @@ function telaDeck() {
       <button class="btn sec" style="margin-top:8px" onclick="abrirBusca('side')">＋ Tech no side</button></div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
     <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {
-      const [nome, cor, , sim] = ENERGIAS[t];
-      // na grade: toque = +1, botão − tira uma; na lista: ✕ apaga o tipo inteiro do deck
-      return grade() ? `<div class="res" onclick="mudaEnergia('${t}',1)"><div class="tw"><div class="en" style="background:${cor};aspect-ratio:63/88;border-radius:6px;font-size:40px">${sim}</div><span class="qb">${n}</span>
+      const [nome, cor] = ENERGIAS[t], sim = simbolo(t);
+      // na grade: toque = +1, botão − tira uma; na lista: o X apaga o tipo inteiro do deck
+      return grade() ? `<div class="res" onclick="mudaEnergia('${t}',1)"><div class="tw"><div class="en" style="background:${cor};aspect-ratio:63/88;border-radius:6px">${sim}</div><span class="qb">${n}</span>
           <button class="menos" title="Tirar 1" onclick="event.stopPropagation();mudaEnergia('${t}',-1)">−</button></div><b>Energia ${nome}</b></div>`
-        : `<div class="lin"><div class="ph en" style="background:${cor};font-size:24px">${sim}</div><div class="i"><div class="nm">Energia ${nome}</div></div>
-          <div class="qt"><button onclick="mudaEnergia('${t}',-1)">−</button><b>${n}</b><button onclick="mudaEnergia('${t}',1)">+</button><button title="Apagar do deck" onclick="mudaEnergia('${t}',-${n})">✕</button></div></div>`;
+        : `<div class="lin"><div class="ph en" style="background:${cor}">${sim}</div><div class="i"><div class="nm">Energia ${nome}</div></div>
+          <div class="qt"><button onclick="mudaEnergia('${t}',-1)">−</button><b>${n}</b><button onclick="mudaEnergia('${t}',1)">+</button><button title="Apagar do deck" onclick="mudaEnergia('${t}',-${n})">${ic("fechar")}</button></div></div>`;
     }))}
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><span class="muted" style="flex:none">Somar +1:</span>
-        ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${ENERGIAS[t][3]}</button>`).join("")}</div></div>
+        ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${simbolo(t)}</button>`).join("")}</div></div>
     ${d.falhas?.length ? `<div class="card"><b>Não encontrei na base:</b>${d.falhas.map(l => `<div class="sub">${esc(l)}</div>`).join("")}<button class="btn sec" style="margin-top:8px" onclick="deckAberto.falhas=[];salvar();render()">Limpar aviso</button></div>` : ""}
     <button class="btn del" onclick="apagarDeck()" style="margin-top:6px">Apagar deck</button>`;
 }
@@ -960,7 +1000,7 @@ function somaPreco(itens) {
   return { valor: com.reduce((s, x) => s + x.c.preco * x.n, 0), sem: itens.length - com.length };
 }
 let lista = "comprar";
-const LISTAS = { comprar: ["🛒 Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: ["🔁 Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: ["🖨 Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"] };
+const LISTAS = { comprar: [ic("carrinho") + " Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: [ic("repetir") + " Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: [ic("imprimir") + " Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"] };
 const itensLista = U => lista === "comprar" ? faltando(U) : lista === "troca" ? sobrando(U) : proxies();
 function telaCompras() {
   const U = calcUso(), itens = itensLista(U), [, titulo, frase, vazio] = LISTAS[lista], px = lista === "proxy";
@@ -982,12 +1022,12 @@ function telaCompras() {
   };
   const vazios = {
     comprar: "Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.",
-    troca: `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda em ⚙ Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`,
-    proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “🖨 Proxy” numa carta que falta."
+    troca: `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda nos Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`,
+    proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “Proxy” numa carta que falta."
   };
   $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">` +
       Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" style="padding:10px 4px;font-size:14px" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
-    (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">🖨 Imprimir</button>` : ""}</div>
+    (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button>` : ""}</div>
       <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${vazios[lista]}</p>`);
 }
 function copiarLista() {
@@ -1033,6 +1073,7 @@ function importar(f) {
   }).catch(() => alert("Arquivo de backup inválido.")).finally(() => $("fImp").value = "");
 }
 
+document.querySelectorAll("[data-ic]").forEach(e => e.innerHTML = ic(e.dataset.ic));
 render(); nuvem();
 if (tokenValido()) sincronizar(false);
 // voltando pro app (ex.: depois de mexer no computador), puxa o que mudou

@@ -94,6 +94,8 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 nav .ic{width:22px;height:22px}
 .ensv{width:62%;height:62%}
 .res .en .ensv{width:55%;height:55%}
+.sw{width:26px;height:26px;padding:0;border:2px solid var(--line2);border-radius:50%;overflow:hidden;cursor:pointer;flex:none;background:none}
+.sw::-webkit-color-swatch-wrapper{padding:0} .sw::-webkit-color-swatch{border:0;border-radius:50%} .sw::-moz-color-swatch{border:0;border-radius:50%}
 .dot{display:inline-block;width:14px;height:14px;border-radius:50%;flex:none;vertical-align:-2px}
 .slh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .dk{padding:9px 0 2px;margin-top:8px;border-top:1px solid var(--line);cursor:pointer}
@@ -346,6 +348,9 @@ function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on
 const grupo = d => d.rascunho ? "#r" + d.id : d.sleeve.trim().toLowerCase() || "#" + d.id;
 const PALETA = ["#d33b3b", "#2a7de1", "#2e9e4f", "#e0a21b", "#8e44ad", "#e67e22", "#16a085", "#555b66"];
 const corSleeve = nome => D.sleeves?.[nome.trim().toLowerCase()] || "#8b929d";
+const seletorCor = nome => `<input type="color" class="sw" title="Mudar a cor do sleeve" aria-label="Cor do sleeve ${esc(nome)}" value="${corSleeve(nome)}"
+  data-sl="${esc(nome)}" onclick="event.stopPropagation()" onchange="mudarCorSleeve(this.dataset.sl, this.value)">`;
+function mudarCorSleeve(nome, cor) { (D.sleeves ??= {})[nome.trim().toLowerCase()] = cor; salvar(); render(); }
 function calcUso() {
   const U = {};
   for (const d of D.decks.filter(d => !d.rascunho)) for (const [id, nDeck] of Object.entries(d.list)) {
@@ -747,10 +752,10 @@ function telaDecks() {
     return `<div class="dk" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
       <div class="sub muted">${st.total} cartas · ${tagsDeck(st)}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
   };
-  const caixa = (titulo, borda, ds, nota) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
-      <b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
+  const caixa = (titulo, borda, ds, nota, cor) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
+      ${cor ? seletorCor(titulo) : ""}<b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
   $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:12px">＋ Novo deck</button><div class="lst">` +
-    Object.values(sleeves).sort((a, b) => a.nome.localeCompare(b.nome)).map(s => caixa(s.nome, "solid " + corSleeve(s.nome), s.ds, s.ds.length > 1 ? "dividem as cartas" : "")).join("") +
+    Object.values(sleeves).sort((a, b) => a.nome.localeCompare(b.nome)).map(s => caixa(s.nome, "solid " + corSleeve(s.nome), s.ds, s.ds.length > 1 ? "dividem as cartas" : "", true)).join("") +
     (soltos.length ? caixa("Sem sleeve", "solid var(--line2)", soltos, "cada um com as suas cartas") : "") +
     (rasc.length ? caixa("Rascunhos", "dashed var(--tx3)", rasc, "não ocupam cartas") : "") +
     "</div>" + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
@@ -862,7 +867,7 @@ function telaDeck() {
       <button class="btn sec" onclick="editarDeck()">Editar / colar lista</button></div>
     <button class="btn sec" onclick="exportarDeck()" style="margin-bottom:10px">Exportar lista (copiar)</button>
     ${d.rascunho ? `<div class="card" style="border:2px dashed var(--tx3)"><b>Rascunho</b> — não ocupa cartas do estoque e não entra na lista de compras. Quando montar de verdade, desmarque em "Editar".</div>`
-      : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh"><span class="dot" style="background:${corSleeve(d.sleeve)}"></span><b>${esc(d.sleeve)}</b></div>
+      : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh">${seletorCor(d.sleeve)}<b>${esc(d.sleeve)}</b><span class="muted" style="font-size:13px">toque na bolinha pra mudar a cor</span></div>
         <div class="sub">${(() => { const outros = D.decks.filter(x => x !== d && !x.rascunho && grupo(x) === g).map(x => esc(x.name)); return outros.length ? `Divide o sleeve com: <b>${outros.join(", ")}</b>` : "Sozinho nesse sleeve."; })()}</div></div>` : ""}
     ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck:
       ${st.naoTenho ? `<b>${st.naoTenho}</b> você não tem` : ""}${st.naoTenho && st.ocupada ? " e " : ""}${st.ocupada ? `<b>${st.ocupada}</b> ${st.ocupada > 1 ? "estão ocupadas" : "está ocupada"} em outros decks` : ""}.

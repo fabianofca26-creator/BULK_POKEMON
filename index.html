@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d2b4f">
+<title>Estoque Pokémon</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#fff; --line:#e3e5ea; --line2:#cfd3db;
+  --tx:#161a20; --tx2:#5d646f; --tx3:#8b929d;
+  --ac:#1d2b4f; --ac-tx:#fff;
+  --ok-bg:#e7f4ea; --ok-tx:#1d5b30;
+  --wa-bg:#fdf0d9; --wa-tx:#7a5106;
+  --er-bg:#fbe9e9; --er-tx:#8f2020;
+  --r:12px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#101317; --card:#181c22; --line:#272c34; --line2:#39404a;
+    --tx:#eceef2; --tx2:#a3abb7; --tx3:#767e8a;
+    --ac:#dbe4f0; --ac-tx:#0f1621;
+    --ok-bg:#16301f; --ok-tx:#8fd6a4;
+    --wa-bg:#33270f; --wa-tx:#f0c476;
+    --er-bg:#331818; --er-tx:#f0a0a0;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:90px}
+h1,h2,h3{font-weight:600;margin:0}
+button{font:inherit;color:inherit}
+.wrap{max-width:560px;margin:0 auto;padding:0 14px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;display:flex;align-items:center;gap:10px}
+header .t{flex:1;min-width:0}
+header h1{font-size:17px;line-height:1.2}
+header p{margin:0;font-size:12px;color:var(--tx3)}
+.icobtn{background:none;border:0;padding:6px 10px;border-radius:9px;color:var(--tx2);cursor:pointer;font-size:20px;line-height:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:10px}
+label{display:block;font-size:12px;color:var(--tx2);margin:0 0 5px}
+input,select,textarea{width:100%;font:inherit;background:var(--card);color:var(--tx);border:1px solid var(--line2);border-radius:10px;padding:11px 12px}
+textarea{min-height:140px;font-size:13px;font-family:ui-monospace,monospace}
+input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
+.field{margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.btn{width:100%;background:var(--ac);color:var(--ac-tx);border:0;border-radius:10px;padding:13px;font-size:16px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.4}
+.btn.sec{background:transparent;color:var(--tx);border:1px solid var(--line2);font-weight:400;padding:11px}
+.btn.del{background:transparent;color:var(--er-tx);border:1px solid var(--er-tx);font-weight:400;padding:11px}
+.muted{color:var(--tx3);font-size:13px}
+.hide{display:none!important}
+.lin{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.lin:last-child{border-bottom:0}
+.lin img,.lin .ph{width:42px;height:58px;border-radius:4px;object-fit:cover;background:var(--line);flex:none}
+.lin .i{flex:1;min-width:0;cursor:pointer}
+.lin .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lin .sub{font-size:12px;color:var(--tx2)}
+.qt{display:flex;align-items:center;gap:2px;flex:none}
+.qt button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--card);cursor:pointer;font-size:18px;line-height:1}
+.qt b{min-width:26px;text-align:center}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;font-weight:600;margin-left:4px;vertical-align:1px}
+.tag.ok{background:var(--ok-bg);color:var(--ok-tx)}
+.tag.wa{background:var(--wa-bg);color:var(--wa-tx)}
+.tag.er{background:var(--er-bg);color:var(--er-tx)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-top:10px}
+.res{cursor:pointer;text-align:center;font-size:12px;line-height:1.25}
+.res img{width:100%;aspect-ratio:63/88;object-fit:cover;border-radius:6px;background:var(--line);display:block;margin-bottom:3px}
+.res:active{opacity:.6}
+.grp{font-size:12px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
+nav button{flex:1;background:none;border:0;padding:10px 0 12px;font-size:12px;color:var(--tx3);cursor:pointer}
+nav button span{display:block;font-size:20px}
+nav button.on{color:var(--tx);font-weight:600}
+dialog{border:0;border-radius:var(--r);padding:16px;width:min(94vw,560px);max-height:90vh;background:var(--card);color:var(--tx)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{font-size:17px;margin-bottom:12px}
+.big{display:block;width:min(70%,260px);margin:0 auto 12px;border-radius:10px}
+#toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw;transition:opacity .2s;opacity:0;pointer-events:none}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="t"><h1 id="titulo">Estoque</h1><p id="sub"></p></div>
+    <button class="icobtn" onclick="abrirAjustes()" aria-label="Ajustes">⚙</button>
+  </header>
+  <main id="tela"></main>
+</div>
+
+<nav>
+  <button data-a="estoque" onclick="ir('estoque')"><span>🗃</span>Estoque</button>
+  <button data-a="decks" onclick="ir('decks')"><span>🃏</span>Decks</button>
+  <button data-a="compras" onclick="ir('compras')"><span>🛒</span>Comprar</button>
+</nav>
+
+<!-- busca na base TCGdex (precisa de internet) -->
+<dialog id="dlgBusca">
+  <h2 id="buscaTit">Cadastrar carta</h2>
+  <div class="row">
+    <input id="q" placeholder="Nome da carta (ex.: pikachu 25)" enterkeyhint="search" onkeydown="if(event.key==='Enter')buscar()">
+    <button class="btn" style="flex:none;width:auto" onclick="buscar()">Buscar</button>
+  </div>
+  <p class="muted" id="buscaMsg">Dica: coloque o número junto do nome pra achar a carta exata. Toque na carta pra somar +1.</p>
+  <div class="grid" id="buscaRes"></div>
+  <button class="btn sec" style="margin-top:12px" onclick="dlgBusca.close();render()">Fechar</button>
+</dialog>
+
+<dialog id="dlgCarta"></dialog>
+
+<dialog id="dlgDeck">
+  <h2 id="deckFormTit">Novo deck</h2>
+  <div class="field"><label>Nome</label><input id="dNome"></div>
+  <div class="field"><label>Sleeve (decks no mesmo sleeve dividem as cartas)</label><input id="dSleeve" list="sleeves" placeholder="ex.: Sleeve vermelho"><datalist id="sleeves"></datalist></div>
+  <div class="field"><label>Colar lista (opcional, formato TCG Live / Limitless)</label><textarea id="dLista" placeholder="4 Dreepy TWM 128&#10;4 Arven SVI 166&#10;..."></textarea></div>
+  <p class="muted" id="deckMsg"></p>
+  <div class="row"><button class="btn sec" onclick="dlgDeck.close()">Cancelar</button><button class="btn" id="deckOk" onclick="salvarDeck()">Salvar</button></div>
+</dialog>
+
+<dialog id="dlgAjustes">
+  <h2>Ajustes</h2>
+  <div class="field"><label>Marcas de regulação válidas no Standard</label><input id="aMarcas"></div>
+  <p class="muted">A letra fica no canto de baixo da carta. Quando houver rotação (todo ano, por volta de abril), tire a letra mais antiga daqui.</p>
+  <button class="btn" onclick="salvarAjustes()">Salvar</button>
+  <div class="grp">Backup</div>
+  <p class="muted" id="bkInfo"></p>
+  <div class="row">
+    <button class="btn sec" onclick="exportar()">Exportar</button>
+    <button class="btn sec" onclick="fImp.click()">Importar</button>
+  </div>
+  <input id="fImp" type="file" accept=".json" class="hide" onchange="importar(this.files[0])">
+  <button class="btn sec" style="margin-top:12px" onclick="dlgAjustes.close()">Fechar</button>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+const API = "https://api.tcgdex.net/v2";
+const KEY = "pkst_v1";
+// cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energia,falhas:[linhas]}
+let D = Object.assign({ cards: {}, decks: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
+let aba = "estoque", deckAberto = null, filtro = "", modoBusca = null;
+
+const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const img = (c, q = "low") => c.img ? `${c.img}/${q}.webp` : "";
+const thumb = c => c.img ? `<img loading="lazy" src="${img(c)}" alt="">` : `<div class="ph"></div>`;
+const legal = c => !!c.reg && D.marcas.toUpperCase().split(/[\s,]+/).includes(c.reg);
+const regTag = c => c.reg ? `<span class="tag ${legal(c) ? "ok" : "er"}">${esc(c.reg)}</span>` : "";
+// a base manda a categoria no idioma da carta (Pokémon/Treinador/Energia ou Trainer/Energy)
+const ordem = c => ({ p: 0, t: 1, e: 2 })[norm(c.cat)[0]] ?? 9;
+let toastT;
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2200); }
+
+// ---------- uso das cartas ----------
+// Decks no mesmo sleeve dividem cartas: dentro do grupo conta o MAIOR uso, entre grupos SOMA.
+const grupo = d => d.sleeve.trim().toLowerCase() || "#" + d.id;
+function calcUso() {
+  const U = {};
+  for (const d of D.decks) for (const [id, n] of Object.entries(d.list)) {
+    const u = ((U[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
+    u.n = Math.max(u.n, n); u.decks.push(d.name);
+  }
+  return U;
+}
+const usado = (U, id, exceto) => Object.entries(U[id] || {}).reduce((s, [g, u]) => g === exceto ? s : s + u.n, 0);
+const decksDe = (U, id, exceto) => Object.entries(U[id] || {}).filter(([g]) => g !== exceto).flatMap(([, u]) => u.decks);
+
+// ---------- base TCGdex ----------
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+let setsCache = {};
+async function sets(lang) { return setsCache[lang] ??= getJSON(`${API}/${lang}/sets`).then(l => Object.fromEntries(l.map((s, i) => [s.id, { name: s.name, i }]))); }
+// Garante a carta no cadastro; nome em português quando a base tem, senão inglês.
+async function garantir(id) {
+  if (D.cards[id]) return D.cards[id];
+  const c = await getJSON(`${API}/pt/cards/${encodeURIComponent(id)}`).catch(() => getJSON(`${API}/en/cards/${encodeURIComponent(id)}`));
+  return D.cards[id] = { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", img: c.image || "", qty: 0 };
+}
+
+// ---------- telas ----------
+function ir(a) { aba = a; deckAberto = null; render(); scrollTo(0, 0); }
+function render() {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.a === aba));
+  ({ estoque: telaEstoque, decks: deckAberto ? telaDeck : telaDecks, compras: telaCompras })[aba]();
+}
+
+function linhaEstoque(id, c, U) {
+  const em = usado(U, id), livre = c.qty - em;
+  return `<div class="lin">${thumb(c)}
+    <div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
+      <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
+      <div class="sub">${em ? `${em} em deck · <b>${livre < 0 ? 0 : livre} livre${livre === 1 ? "" : "s"}</b>` : "nenhuma em deck"}</div></div>
+    <div class="qt"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>`;
+}
+
+function telaEstoque() {
+  const U = calcUso(), meus = Object.entries(D.cards).filter(([, c]) => c.qty > 0);
+  $("titulo").textContent = "Estoque";
+  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes`;
+  $("tela").innerHTML = `
+    <input id="filtro" placeholder="Já tenho essa carta? Busque aqui…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()" style="margin-bottom:10px">
+    <button class="btn" onclick="abrirBusca('estoque')" style="margin-bottom:12px">＋ Cadastrar carta</button>
+    <div class="card" id="lista"></div>`;
+  telaEstoqueLista();
+}
+function telaEstoqueLista() {
+  const U = calcUso(), f = norm(filtro);
+  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)))
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
+  $("lista").innerHTML = lista.length ? lista.map(([id, c]) => linhaEstoque(id, c, U)).join("")
+    : `<p class="muted">${f ? "Você não tem nenhuma carta com esse nome." : "Nenhuma carta cadastrada ainda."}</p>`;
+}
+
+function mudaQtd(id, d) {
+  const c = D.cards[id]; c.qty = Math.max(0, c.qty + d); salvar();
+  if ($("dlgCarta").open) abrirCarta(id);
+  aba === "estoque" && !$("dlgCarta").open ? telaEstoqueLista() : render();
+}
+
+function abrirCarta(id) {
+  const c = D.cards[id], U = calcUso(), em = usado(U, id);
+  const usos = D.decks.filter(d => d.list[id]).map(d => `<div class="sub">• ${esc(d.name)}: ${d.list[id]}${d.sleeve ? ` <span class="muted">(${esc(d.sleeve)})</span>` : ""}</div>`).join("");
+  const dlg = $("dlgCarta");
+  dlg.innerHTML = `${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
+    <h2>${esc(c.name)}${regTag(c)}</h2>
+    <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
+    <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
+    <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
+    <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
+  if (!dlg.open) dlg.showModal();
+}
+
+// ---------- busca/cadastro ----------
+function abrirBusca(modo) {
+  modoBusca = modo;
+  $("buscaTit").textContent = modo === "estoque" ? "Cadastrar carta" : "Adicionar ao deck";
+  $("buscaRes").innerHTML = ""; $("q").value = "";
+  $("dlgBusca").showModal(); $("q").focus();
+}
+async function buscar() {
+  const t = $("q").value.trim(); if (!t) return;
+  // "pikachu 25" → nome + número
+  const m = t.match(/^(.*?)\s+(\d+)$/), nome = m ? m[1] : t, num = m ? +m[2] : null;
+  $("buscaMsg").textContent = "Buscando…"; $("buscaRes").innerHTML = "";
+  try {
+    let lang = "pt", r = await getJSON(`${API}/pt/cards?name=${encodeURIComponent(nome)}`);
+    if (!r.length) { lang = "en"; r = await getJSON(`${API}/en/cards?name=${encodeURIComponent(nome)}`); }
+    const S = await sets(lang), setDe = id => id.slice(0, id.lastIndexOf("-"));
+    if (num !== null) r = r.filter(c => parseInt(c.localId, 10) === num);
+    r.sort((a, b) => (S[setDe(b.id)]?.i ?? -1) - (S[setDe(a.id)]?.i ?? -1));
+    $("buscaMsg").textContent = r.length ? `${r.length} carta${r.length > 1 ? "s" : ""}${r.length > 90 ? " (mostrando as 90 mais novas — coloque o número pra afinar)" : ""}. Toque pra somar +1.` : "Nada encontrado.";
+    $("buscaRes").innerHTML = r.slice(0, 90).map(c => `<div class="res" onclick="escolher('${esc(c.id)}')">
+      ${c.image ? `<img loading="lazy" src="${c.image}/low.webp" alt="">` : `<img alt="">`}
+      <b>${esc(c.name)}</b><br><span class="muted">${esc(S[setDe(c.id)]?.name || setDe(c.id))} · ${esc(c.localId)}</span></div>`).join("");
+  } catch { $("buscaMsg").textContent = "Sem conexão com a base de cartas. A busca precisa de internet."; }
+}
+async function escolher(id) {
+  try {
+    const c = await garantir(id);
+    if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); }
+    else { const d = deckAberto; d.list[id] = (d.list[id] || 0) + 1; toast(`${c.name}: ${d.list[id]} no deck`); }
+    salvar();
+  } catch { toast("Sem conexão — não deu pra buscar a carta."); }
+}
+
+// ---------- decks ----------
+function telaDecks() {
+  const U = calcUso();
+  $("titulo").textContent = "Decks"; $("sub").textContent = `${D.decks.length} deck${D.decks.length === 1 ? "" : "s"}`;
+  const porSleeve = {};
+  for (const d of D.decks) (porSleeve[d.sleeve.trim() || "Sem sleeve"] ??= []).push(d);
+  $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:6px">＋ Novo deck</button>` +
+    Object.entries(porSleeve).sort().map(([s, ds]) => `<div class="grp">${esc(s)}</div>` + ds.map(d => {
+      const st = statusDeck(d, U);
+      return `<div class="card" style="cursor:pointer" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
+        <div class="sub muted">${st.total} cartas · ${st.falta ? `<span class="tag er">faltam ${st.falta}</span>` : `<span class="tag ok">completo</span>`}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
+    }).join("")).join("") + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
+}
+function statusDeck(d, U) {
+  let total = d.energia || 0, falta = 0, rot = 0;
+  for (const [id, n] of Object.entries(d.list)) {
+    const c = D.cards[id]; total += n;
+    falta += Math.max(0, n - Math.max(0, c.qty - usado(U, id, grupo(d))));
+    if (!legal(c)) rot += n;
+  }
+  return { total, falta, rot };
+}
+function abrirDeck(id) { aba = "decks"; deckAberto = D.decks.find(d => d.id === id); render(); scrollTo(0, 0); }
+function telaDeck() {
+  const d = deckAberto, U = calcUso(), g = grupo(d), st = statusDeck(d, U);
+  $("titulo").textContent = d.name; $("sub").textContent = `${st.total} cartas${d.sleeve ? " · " + d.sleeve : ""}`;
+  const linhas = Object.entries(d.list).map(([id, n]) => ({ id, n, c: D.cards[id] }))
+    .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
+  const html = linhas.map(({ id, n, c }) => {
+    const livre = Math.max(0, c.qty - usado(U, id, g)), falta = Math.max(0, n - livre);
+    const outros = decksDe(U, id, g);
+    const st = !falta ? `<span class="tag ok">✓ tenho</span>`
+      : `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}`;
+    return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
+      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}</div></div>
+      <div class="qt"><button onclick="mudaDeck('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="mudaDeck('${esc(id)}',1)">+</button></div></div>`;
+  }).join("");
+  $("tela").innerHTML = `
+    <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn" onclick="abrirBusca('deck')">＋ Carta</button>
+      <button class="btn sec" onclick="editarDeck()">Editar / colar lista</button></div>
+    ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.</div>` : ""}
+    ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
+    <div class="card">${html || `<p class="muted">Deck vazio.</p>`}
+    ${d.energia ? `<div class="lin"><div class="ph"></div><div class="i"><div class="nm">Energias básicas</div><div class="sub">fora do controle de estoque</div></div><div class="qt"><b>${d.energia}</b></div></div>` : ""}</div>
+    ${d.falhas?.length ? `<div class="card"><b>Não encontrei na base:</b>${d.falhas.map(l => `<div class="sub">${esc(l)}</div>`).join("")}<button class="btn sec" style="margin-top:8px" onclick="deckAberto.falhas=[];salvar();render()">Limpar aviso</button></div>` : ""}
+    <button class="btn del" onclick="apagarDeck()" style="margin-top:6px">Apagar deck</button>`;
+}
+function mudaDeck(id, d) {
+  const l = deckAberto.list; l[id] = (l[id] || 0) + d;
+  if (l[id] <= 0) delete l[id];
+  salvar(); render();
+}
+function apagarDeck() {
+  if (!confirm(`Apagar o deck "${deckAberto.name}"? As cartas continuam no estoque.`)) return;
+  D.decks = D.decks.filter(d => d !== deckAberto); salvar(); ir("decks");
+}
+function prepararFormDeck(d) {
+  $("deckFormTit").textContent = d ? "Editar deck" : "Novo deck";
+  $("dNome").value = d?.name || ""; $("dSleeve").value = d?.sleeve || ""; $("dLista").value = "";
+  $("dLista").placeholder = d ? "Colar lista SUBSTITUI as cartas do deck. Deixe vazio pra só renomear." : "4 Dreepy TWM 128\n4 Arven SVI 166\n...";
+  $("sleeves").innerHTML = [...new Set(D.decks.map(x => x.sleeve).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
+  $("deckMsg").textContent = ""; $("deckOk").disabled = false; $("dlgDeck").showModal();
+}
+const novoDeck = () => { deckAberto = null; prepararFormDeck(null); };
+const editarDeck = () => prepararFormDeck(deckAberto);
+async function salvarDeck() {
+  const nome = $("dNome").value.trim(); if (!nome) return $("dNome").focus();
+  let d = deckAberto;
+  if (!d) { d = { id: Date.now().toString(36), name: "", sleeve: "", list: {}, energia: 0, falhas: [] }; }
+  d.name = nome; d.sleeve = $("dSleeve").value.trim();
+  const txt = $("dLista").value.trim();
+  if (txt) {
+    $("deckOk").disabled = true; $("deckMsg").textContent = "Buscando as cartas na base…";
+    try { Object.assign(d, await lerLista(txt)); }
+    catch { $("deckMsg").textContent = "Sem conexão com a base de cartas. Tente de novo com internet."; $("deckOk").disabled = false; return; }
+  }
+  if (!D.decks.includes(d)) D.decks.push(d);
+  salvar(); $("dlgDeck").close(); deckAberto = d; aba = "decks"; render();
+}
+
+// Lista no formato do TCG Live / Limitless: "4 Arven SVI 166"
+const APELIDO = { "PR-SV": "SVP", "PR-ME": "MEP", "PR-SW": "SWSHP" };
+const BASICA = /^(basic\s+)?(\{.\}|grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy)\s+energy$/i;
+const setPorCodigo = {}, cartasDoSet = {};
+async function idDaCarta(cod, num) {
+  cod = APELIDO[cod.toUpperCase()] || cod.toUpperCase();
+  const setId = await (setPorCodigo[cod] ??= getJSON(`${API}/en/sets?abbreviation.official=${encodeURIComponent(cod)}`).then(l => l[0]?.id));
+  if (!setId) return null;
+  const cartas = await (cartasDoSet[setId] ??= getJSON(`${API}/en/sets/${encodeURIComponent(setId)}`).then(s => s.cards));
+  const c = cartas.find(c => c.localId.toUpperCase() === num.toUpperCase()) || cartas.find(c => parseInt(c.localId, 10) === parseInt(num, 10));
+  return c?.id || null;
+}
+async function lerLista(txt) {
+  const list = {}, falhas = []; let energia = 0;
+  const linhas = txt.split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^(pok[eé]mon|trainer|energy|total)\b.*:/i.test(l) && !/^total/i.test(l));
+  await Promise.all(linhas.map(async l => {
+    const m = l.match(/^(\d+)\s+(.+?)\s+([A-Za-z0-9-]{2,8})\s+([A-Za-z]*\d+[A-Za-z]?)$/);
+    if (!m) { const e = l.match(/^(\d+)\s+(.+)$/); if (e && BASICA.test(e[2].trim())) energia += +e[1]; else falhas.push(l); return; }
+    const [, n, nome, cod, num] = m;
+    if (BASICA.test(nome) || /^(SVE|MEE|SVEN)$/i.test(cod)) { energia += +n; return; }
+    const id = await idDaCarta(cod, num);
+    if (!id) return falhas.push(l);
+    await garantir(id);
+    list[id] = (list[id] || 0) + +n;
+  }));
+  return { list, energia, falhas };
+}
+
+// ---------- compras ----------
+const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - c.qty })).filter(x => x.n > 0)
+  .sort((a, b) => a.c.name.localeCompare(b.c.name));
+function telaCompras() {
+  const U = calcUso(), itens = faltando(U);
+  const total = itens.reduce((s, x) => s + x.n, 0);
+  $("titulo").textContent = "Comprar"; $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} pra fechar os decks` : "nada faltando";
+  $("tela").innerHTML = itens.length ? `<button class="btn" onclick="copiarCompras()" style="margin-bottom:12px">Copiar lista</button>
+    <div class="card">${itens.map(({ id, c, n }) => `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
+      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}</div>
+      <div class="sub">${esc(decksDe(U, id).join(", "))}</div></div><div class="qt"><b style="font-size:18px">${n}×</b></div></div>`).join("")}</div>`
+    : `<p class="muted">Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.</p>`;
+}
+function copiarCompras() {
+  const txt = faltando(calcUso()).map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})`).join("\n");
+  navigator.clipboard.writeText(txt).then(() => toast("Lista copiada"), () => toast("Não deu pra copiar"));
+}
+
+// ---------- ajustes / backup ----------
+function abrirAjustes() {
+  $("aMarcas").value = D.marcas;
+  $("bkInfo").textContent = D.bk ? `Último backup: ${new Date(D.bk).toLocaleDateString("pt-BR")}` : "Nenhum backup feito ainda.";
+  $("dlgAjustes").showModal();
+}
+function salvarAjustes() { D.marcas = $("aMarcas").value.toUpperCase().trim(); salvar(); $("dlgAjustes").close(); render(); }
+function exportar() {
+  D.bk = Date.now(); salvar();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(D)], { type: "application/json" }));
+  a.download = `estoque-pokemon-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  abrirAjustes();
+}
+function importar(f) {
+  if (!f) return;
+  f.text().then(t => {
+    const n = JSON.parse(t);
+    if (!n.cards || !Array.isArray(n.decks)) throw 0;
+    if (!confirm("Substituir TODOS os dados deste celular pelo backup?")) return;
+    D = Object.assign({ marcas: "H I J", bk: 0 }, n); salvar(); $("dlgAjustes").close(); ir("estoque"); toast("Backup restaurado");
+  }).catch(() => alert("Arquivo de backup inválido.")).finally(() => $("fImp").value = "");
+}
+
+render();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>

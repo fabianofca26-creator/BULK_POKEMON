@@ -1,0 +1,9 @@
+{
+  "name": "Estoque Pokémon",
+  "short_name": "Estoque PKM",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#1d2b4f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -87,10 +87,14 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
 @media (prefers-color-scheme:dark){ .tag.lv{background:#262e14;color:#c9db8e} .tag.cl{background:#3a1a2c;color:#f0a8cf} .tag.cm{background:#10302d;color:#8fe0d6} .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
 .tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
-#cpBox summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between}
-#cpBox summary::-webkit-details-marker{display:none}
-#cpBox summary::after{content:"▾ recolher";text-transform:none;letter-spacing:0}
-#cpBox:not([open]) summary::after{content:"▸ mostrar"}
+.sec{border-top:1px solid var(--line)}
+.sec summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:8px;padding:12px 0}
+.sec summary::-webkit-details-marker{display:none}
+.sec summary b{flex:none}
+.sec summary .muted{flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.sec summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--tx3);border-bottom:2px solid var(--tx3);transform:rotate(45deg) translateY(-3px);margin-left:4px}
+.sec[open] summary::after{transform:rotate(-135deg)}
+.secc{padding-bottom:12px}
 .cp{display:grid;grid-template-columns:22px 1fr 96px;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .cp select,.cp input{padding:8px 9px;font-size:14px}
 .cp .loc{grid-column:2/4}
@@ -118,7 +122,7 @@ nav button.on{color:var(--tx);font-weight:600}
 dialog{border:0;border-radius:var(--r);padding:16px;width:min(94vw,560px);max-height:90vh;background:var(--card);color:var(--tx)}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog h2{font-size:17px;margin-bottom:12px}
-.big{display:block;width:min(70%,260px);margin:0 auto 12px;border-radius:10px}
+.big{display:block;width:min(52%,210px);margin:0 auto 12px;border-radius:10px}
 #toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw;transition:opacity .2s;opacity:0;pointer-events:none}
 #toast.on{opacity:1}
 /* computador: abas na lateral, conteúdo largo, cartas em colunas */
@@ -324,7 +328,7 @@ const emDecks = o => Object.values(o.decks).reduce((s, k) => s + k, 0);
 function anotarNova(id) {
   if (!D.anotar) return;
   abrirCarta(id);
-  if ($("cpBox")) $("cpBox").open = true; // pra anotar, a seção precisa estar aberta
+  const box = $("dlgCarta").querySelector("details[data-k=copias]"); if (box) box.open = true; // pra anotar, a seção precisa estar aberta
   const cps = $("dlgCarta").querySelectorAll(".cp"), ult = cps[cps.length - 1];
   if (ult) { ult.scrollIntoView({ block: "center" }); ult.querySelector("select").focus(); }
 }
@@ -637,35 +641,45 @@ function mudaQtd(id, d) {
   aba === "estoque" && !$("dlgCarta").open ? telaEstoqueLista() : render();
 }
 
+// Janela da carta: o essencial sempre à vista (foto, nome, quantas tem e onde estão);
+// o resto em seções que abrem com um toque, cada uma com um resumo no título. O app lembra quais você deixa abertas.
+const secAberta = k => (D.secs || {})[k];
+const secao = (k, titulo, resumo, corpo) => `<details class="sec" data-k="${k}"${secAberta(k) ? " open" : ""} ontoggle="(D.secs??={})[this.dataset.k]=this.open;localStorage.setItem(KEY,JSON.stringify(D))">
+  <summary><b>${titulo}</b><span class="muted">${resumo}</span></summary><div class="secc">${corpo}</div></details>`;
 function abrirCarta(id) {
-  const c = D.cards[id], o = ondeEstao(c), em = emDecks(o), noDeck = aba === "decks" && !!(deckAberto?.list[id] || deckAberto?.side?.[id]);
-  const dk = noDeck ? deckAberto : null, px = dk?.proxy?.[id] || 0;
-  const usos = D.decks.filter(d => d.list[id] || d.side?.[id]).map(d => `<div class="sub" style="margin-bottom:3px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span> ${esc(d.name)}: ${d.list[id] || 0}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}${d.rascunho ? "" : ` · ${o.decks[d.id] || 0} colocada${o.decks[d.id] === 1 ? "" : "s"}`}
-    <span class="muted">${d.rascunho ? "(rascunho)" : d.sleeve ? `(${esc(d.sleeve)})` : ""}</span></div>`).join("");
+  const c = D.cards[id], o = ondeEstao(c), em = emDecks(o), fora = somaEmp(id, "saiu"), livre = Math.max(0, o.livre - fora), cam = somaCaminho(id);
+  const noDeck = aba === "decks" && !!(deckAberto?.list[id] || deckAberto?.side?.[id]), dk = noDeck ? deckAberto : null, px = dk?.proxy?.[id] || 0;
+  const decks = D.decks.filter(d => d.list[id] || d.side?.[id]), emps = D.emp.filter(e => e.card === id), pago = pagoTotal(c);
   const dlg = $("dlgCarta"), pos = vistos.indexOf(id);
   dlg.dataset.id = id;
   dlg.innerHTML = `${pos >= 0 && vistos.length > 1 ? `<div class="navc"><button onclick="navCarta(-1)" aria-label="Carta anterior">‹</button>
       <span>${pos + 1} de ${vistos.length}</span><button onclick="navCarta(1)" aria-label="Próxima carta">›</button></div>` : ""}
     ${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
     <h2>${esc(c.name)}${regTag(c)}</h2>
-    <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
-    <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
-    ${somaCaminho(id) ? `<p class="sub" style="margin:-6px 0 10px"><span class="tag cm">${somaCaminho(id)} a caminho</span> ${esc([...new Set(D.caminho.filter(e => e.card === id).map(e => e.de).filter(Boolean))].join(", "))}</p>` : ""}
-    <button class="btn sec" style="margin-bottom:12px" onclick="comprei('${esc(id)}')&&(render(),abrirCarta('${esc(id)}'))">${ic("caminhao")} Comprei, está a caminho</button>
-    <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
-      <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
-    <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço de mercado anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Preço de mercado: consulte na Liga e anote aqui."}</p>
-    ${c.qty ? `<details id="cpBox"${D.cpFechado ? "" : " open"} ontoggle="D.cpFechado=!this.open;localStorage.setItem(KEY,JSON.stringify(D))">
-      <summary class="grp">Suas cópias (${c.qty})</summary><p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}</details>` : ""}
-    ${dk ? `<div class="grp">Neste deck: ${dk.list[id] || 0} · side: ${dk.side?.[id] || 0}</div>
-      <div class="row" style="margin-bottom:8px">
-        ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">${ic("descer")} Passar 1 pro side</button>` : ""}
-        ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">${ic("subir")} Passar 1 pro deck</button>` : ""}</div>
-      ${dk.list[id] ? `<div class="row"><span>${ic("imprimir")} Proxies neste deck</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}` : ""}
-    <div class="grp">Em decks (${em} colocada${em === 1 ? "" : "s"}${o.col ? ` · ${o.col} na coleção` : ""})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
-    ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
-    <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
-    <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>
+    <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)}${c.reg && !legal(c) ? " · fora do Standard" : ""}</p>
+    <div class="row" style="margin:10px 0 6px"><b>Tenho</b><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
+    <div class="sub" style="margin-bottom:12px">${[livre && `<span class="tag lv">${livre} livre${livre > 1 ? "s" : ""}</span>`, em && `<span class="tag ok">${em} em deck</span>`, o.col && `<span class="tag cl">${o.col} na coleção</span>`,
+      fora && `<span class="tag wa">${fora} emprestada${fora > 1 ? "s" : ""}</span>`, cam && `<span class="tag cm">${cam} a caminho</span>`].filter(Boolean).join("") || `<span class="muted">nenhuma cópia</span>`}</div>
+    ${dk ? `<div class="card" style="border-left:6px solid ${dk.sleeve ? corSleeve(dk.sleeve) : "var(--line2)"}"><b>${esc(dk.name)}</b> <span class="muted">${dk.list[id] || 0} no deck · ${dk.side?.[id] || 0} no side</span>
+      <div class="row" style="margin-top:8px">
+        ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">${ic("descer")} 1 pro side</button>` : ""}
+        ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">${ic("subir")} 1 pro deck</button>` : ""}</div>
+      ${dk.list[id] ? `<div class="row" style="margin-top:8px"><span>${ic("imprimir")} Proxies</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}</div>` : ""}
+    ${c.qty ? secao("copias", `Cópias (${c.qty})`, esc([resumoTexto(c), pago && "pago " + brl(pago)].filter(Boolean).join(" · ")),
+      `<p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}`) : ""}
+    ${secao("preco", "Preço na Liga", c.preco ? brl(c.preco) : "sem preço",
+      `<div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
+        <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
+      ${c.precoEm ? `<p class="muted" style="margin:4px 0 0">Anotado em ${c.precoEm.split("-").reverse().join("/")}.</p>` : ""}`)}
+    ${secao("decks", "Decks", decks.length ? `${decks.length} deck${decks.length > 1 ? "s" : ""}` : "nenhum",
+      (decks.map(d => `<div class="sub" style="margin-bottom:4px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span>
+        <b>${esc(d.name)}</b>: ${d.list[id] || 0}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}${d.rascunho ? " <span class=\"muted\">rascunho</span>" : ` · ${o.decks[d.id] || 0} colocada${o.decks[d.id] === 1 ? "" : "s"}`}</div>`).join("") || `<p class="muted">Nenhum deck usa essa carta.</p>`)
+      + `<button class="btn sec" style="margin-top:6px" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção (reprint)${noDeck ? " neste deck" : ""}</button>`)}
+    ${secao("mais", "Compras e empréstimos", [cam && `${cam} a caminho`, emps.length && `${emps.length} empréstimo${emps.length > 1 ? "s" : ""}`].filter(Boolean).join(" · "),
+      `${cam ? `<p class="sub"><span class="tag cm">${cam} a caminho</span> ${esc([...new Set(D.caminho.filter(e => e.card === id).map(e => e.de).filter(Boolean))].join(", "))}</p>` : ""}
+      <button class="btn sec" style="margin-bottom:10px" onclick="comprei('${esc(id)}')&&(render(),abrirCarta('${esc(id)}'))">${ic("caminhao")} Comprei, está a caminho</button>
+      ${emps.map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("")}
+      <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>`)}
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
   resumoCopias(id);
   if (!dlg.open) dlg.showModal();

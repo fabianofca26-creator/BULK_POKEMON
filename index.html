@@ -74,6 +74,10 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .res .tag{margin:2px 1px 0}
 .en{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
 .ebtn{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;font-size:14px;flex:none}
+.tag.oc{background:#e3edfb;color:#1d4f91}
+.tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
+@media (prefers-color-scheme:dark){ .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
+.tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
 .tenho{border:1px solid var(--ok-tx);background:var(--ok-bg);color:var(--ok-tx);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;cursor:pointer;margin-top:3px}
 .navc{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .navc button{width:44px;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--card);font-size:20px;cursor:pointer;flex:none}
@@ -237,7 +241,9 @@ const PALETA = ["#d33b3b", "#2a7de1", "#2e9e4f", "#e0a21b", "#8e44ad", "#e67e22"
 const corSleeve = nome => D.sleeves?.[nome.trim().toLowerCase()] || "#8b929d";
 function calcUso() {
   const U = {};
-  for (const d of D.decks.filter(d => !d.rascunho)) for (const [id, n] of Object.entries(d.list)) {
+  for (const d of D.decks.filter(d => !d.rascunho)) for (const [id, nDeck] of Object.entries(d.list)) {
+    const n = nDeck - (d.proxy?.[id] || 0); // proxy não ocupa carta de verdade
+    if (n <= 0) continue;
     const u = ((U[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
     u.n = Math.max(u.n, n); u.decks.push(d.name);
   }
@@ -447,8 +453,9 @@ function mudaQtd(id, d) {
 }
 
 function abrirCarta(id) {
-  const c = D.cards[id], U = calcUso(), em = usado(U, id), noDeck = aba === "decks" && !!deckAberto?.list[id];
-  const usos = D.decks.filter(d => d.list[id]).map(d => `<div class="sub" style="margin-bottom:3px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span> ${esc(d.name)}: ${d.list[id]}
+  const c = D.cards[id], U = calcUso(), em = usado(U, id), noDeck = aba === "decks" && !!(deckAberto?.list[id] || deckAberto?.side?.[id]);
+  const dk = noDeck ? deckAberto : null, px = dk?.proxy?.[id] || 0;
+  const usos = D.decks.filter(d => d.list[id] || d.side?.[id]).map(d => `<div class="sub" style="margin-bottom:3px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span> ${esc(d.name)}: ${d.list[id] || 0}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}
     <span class="muted">${d.rascunho ? "(rascunho)" : d.sleeve ? `(${esc(d.sleeve)})` : ""}</span></div>`).join("");
   const dlg = $("dlgCarta"), pos = vistos.indexOf(id);
   dlg.dataset.id = id;
@@ -461,6 +468,11 @@ function abrirCarta(id) {
     <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
       <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
     <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Consulte na Liga e anote o preço aqui."}</p>
+    ${dk ? `<div class="grp">Neste deck: ${dk.list[id] || 0} · side: ${dk.side?.[id] || 0}</div>
+      <div class="row" style="margin-bottom:8px">
+        ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">↓ Passar 1 pro side</button>` : ""}
+        ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">↑ Passar 1 pro deck</button>` : ""}</div>
+      ${dk.list[id] ? `<div class="row"><span>🖨 Proxies neste deck</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}` : ""}
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
     ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">⇄ Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
     <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
@@ -499,6 +511,7 @@ function trocar(de, para) {
   const a = D.cards[de], b = D.cards[para], d = deckAberto;
   if (aba === "decks" && d?.list[de]) {
     d.list[para] = (d.list[para] || 0) + d.list[de]; delete d.list[de];
+    for (const l of [d.side, d.proxy]) if (l?.[de]) { l[para] = (l[para] || 0) + l[de]; delete l[de]; }
     toast(`${d.name}: agora usa ${b.name} de ${b.set}`);
   } else {
     const n = Math.min(parseInt(prompt(`Quantas das suas ${a.qty} cópias são de ${b.set}?`, a.qty), 10), a.qty);
@@ -553,7 +566,7 @@ async function somarSet(id, n) {
 // ---------- busca/cadastro ----------
 function abrirBusca(modo) {
   modoBusca = modo;
-  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção" }[modo];
+  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck" }[modo];
   $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
   $("dlgBusca").showModal(); $("q").focus();
 }
@@ -590,6 +603,7 @@ async function escolher(id) {
     if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); }
     else if (modoBusca === "troca") { if (trocar(trocaDe, id)) { $("dlgBusca").close(); render(); abrirCarta(id); } return; }
     else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
+    else if (modoBusca === "side") { const s = deckAberto.side ??= {}; s[id] = (s[id] || 0) + 1; toast(`${c.name}: ${s[id]} no side`); }
     else { const d = deckAberto; d.list[id] = (d.list[id] || 0) + 1; toast(`${c.name}: ${d.list[id]} no deck`); }
     salvar();
   } catch { toast("Sem conexão — não deu pra buscar a carta."); }
@@ -605,7 +619,7 @@ function telaDecks() {
   const linha = d => {
     const st = statusDeck(d, U);
     return `<div class="dk" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
-      <div class="sub muted">${st.total} cartas · ${st.falta ? `<span class="tag er">faltam ${st.falta}</span>` : `<span class="tag ok">completo</span>`}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
+      <div class="sub muted">${st.total} cartas · ${tagsDeck(st)}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
   };
   const caixa = (titulo, borda, ds, nota) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
       <b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
@@ -615,14 +629,59 @@ function telaDecks() {
     (rasc.length ? caixa("Rascunhos", "dashed var(--tx3)", rasc, "não ocupam cartas") : "") +
     "</div>" + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
 }
+// Situação de n cópias de uma carta no deck. "extra" = cópias que o próprio deck já usa (o side conta depois do deck principal).
+// falta = naoTenho (você não tem, é compra) + ocupada (você tem, mas estão em outros decks).
+function situacao(d, U, id, n, extra = 0) {
+  const c = D.cards[id], g = grupo(d);
+  const livre = Math.max(0, c.qty - usado(U, id, g) - extra), falta = Math.max(0, n - livre);
+  const naoTenho = Math.min(falta, Math.max(0, n + extra - c.qty)), ocupada = falta - naoTenho;
+  // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
+  const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
+  return { falta, naoTenho, ocupada, comOutro, deOutro, outros: decksDe(U, id, g) };
+}
+const tagsSituacao = (id, s) => !s.falta && !s.comOutro ? `<span class="tag ok">✓ tenho</span>`
+  : `${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} ocupada${s.ocupada > 1 ? "s" : ""} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
 function statusDeck(d, U) {
-  let total = totalEnergia(d), falta = 0, rot = 0;
+  let total = totalEnergia(d), naoTenho = 0, ocupada = 0, rot = 0, px = 0;
   for (const [id, n] of Object.entries(d.list)) {
-    const c = D.cards[id]; total += n;
-    falta += Math.max(0, n - Math.max(0, c.qty - usado(U, id, grupo(d))));
-    if (!legal(c)) rot += n;
+    const p = d.proxy?.[id] || 0, s = situacao(d, U, id, n - p); total += n; px += p;
+    naoTenho += s.naoTenho; ocupada += s.ocupada;
+    if (!legal(D.cards[id])) rot += n;
   }
-  return { total, falta, rot };
+  return { total, falta: naoTenho + ocupada, naoTenho, ocupada, rot, px };
+}
+const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
+  : `${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} ocupada${st.ocupada > 1 ? "s" : ""}</span>` : ""}`)
+  + (st.px ? `<span class="tag px">🖨 ${st.px} proxy</span>` : "");
+// proxies marcadas no deck: nunca mais que as cópias da carta no deck
+function mudaProxy(id, n) {
+  const d = deckAberto, p = d.proxy ??= {};
+  p[id] = Math.min(d.list[id] || 0, Math.max(0, (p[id] || 0) + n)); if (!p[id]) delete p[id];
+  salvar(); render();
+  if ($("dlgCarta").open) abrirCarta(id);
+}
+// Lista de impressão: soma as proxies de todos os decks (mesmo sleeve conta o maior, como as cartas)
+function proxies() {
+  const P = {};
+  for (const d of D.decks) for (const [id, n] of Object.entries(d.proxy || {})) {
+    const u = ((P[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
+    u.n = Math.max(u.n, n); u.decks.push(d.name);
+  }
+  return Object.entries(P).map(([id, gs]) => ({ id, c: D.cards[id], n: Object.values(gs).reduce((s, u) => s + u.n, 0), decks: Object.values(gs).flatMap(u => u.decks) }))
+    .sort((a, b) => a.c.name.localeCompare(b.c.name));
+}
+// Folha pra imprimir: cartas no tamanho real (63 × 88 mm), 9 por folha A4
+function imprimirProxies() {
+  const itens = proxies(), w = window.open("", "_blank");
+  if (!w) return alert("O navegador bloqueou a janela de impressão. Libere pop-ups pra esse site.");
+  const cartas = itens.flatMap(({ c, n }) => Array(n).fill(c.img ? `<img src="${img(c, "high")}">` : `<div class="sem">${esc(c.name)}<br>${esc(c.set)} ${esc(c.num)}</div>`));
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>Proxies</title><style>
+    @page{size:A4;margin:8mm} body{margin:0;font:12px sans-serif}
+    .f{display:flex;flex-wrap:wrap;gap:1mm} img,.sem{width:63mm;height:88mm;object-fit:cover;break-inside:avoid}
+    .sem{border:1px dashed #999;display:flex;align-items:center;justify-content:center;text-align:center;box-sizing:border-box}
+    </style><div class="f">${cartas.join("")}</div>
+    <script>Promise.all([...document.images].map(i => i.complete || new Promise(r => i.onload = i.onerror = r))).then(() => print())<\/script>`);
+  w.document.close();
 }
 function abrirDeck(id) { aba = "decks"; deckAberto = D.decks.find(d => d.id === id); render(); scrollTo(0, 0); }
 function telaDeck() {
@@ -630,20 +689,24 @@ function telaDeck() {
   $("titulo").textContent = d.name; $("sub").textContent = `${st.total} cartas${d.sleeve ? " · " + d.sleeve : ""}`;
   const linhas = Object.entries(d.list).map(([id, n]) => ({ id, n, c: D.cards[id] }))
     .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
-  vistos = linhas.map(x => x.id);
-  const html = blocos(linhas.map(({ id, n, c }) => {
-    const livre = Math.max(0, c.qty - usado(U, id, g)), falta = Math.max(0, n - livre);
-    // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
-    const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
-    const outros = decksDe(U, id, g);
-    const st = !falta && !comOutro ? `<span class="tag ok">✓ tenho</span>`
-      : `${falta ? `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}` : ""}${comOutro ? `<span class="tag wa">${comOutro} com ${quem(id, "saiu")}</span>` : ""}${deOutro ? `<span class="tag wa">${deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
-    const tenho = falta ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${falta})">＋ Tenho ${falta}</button>` : "";
+  const sides = Object.entries(d.side || {}).map(([id, n]) => ({ id, n, c: D.cards[id] }))
+    .sort((a, b) => ordem(a.c) - ordem(b.c) || a.c.name.localeCompare(b.c.name));
+  vistos = [...new Set([...linhas, ...sides].map(x => x.id))];
+  // uma linha de carta do deck ou do side; o side conta depois das cópias que o deck principal já usa
+  const linhaDeck = (id, n, c, side) => {
+    const p = side ? 0 : d.proxy?.[id] || 0;
+    const s = situacao(d, U, id, n - p, side ? (d.list[id] || 0) - (d.proxy?.[id] || 0) : 0);
+    const st = (n - p ? tagsSituacao(id, s) : "") + (p ? `<span class="tag px" title="Tirar 1 proxy" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1)">🖨 ${p} proxy</span>` : "");
+    const tenho = (s.naoTenho ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${s.naoTenho})">＋ Tenho ${s.naoTenho}</button>` : "")
+      + (!side && s.falta ? ` <button class="tenho px" onclick="event.stopPropagation();mudaProxy('${esc(id)}',${s.falta})">🖨 Proxy</button>` : "");
     if (grade()) return tile(id, c, n, st + tenho);
+    const muda = side ? "mudaSide" : "mudaDeck";
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}${tenho}</div></div>
-      <div class="qt"><button onclick="mudaDeck('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="mudaDeck('${esc(id)}',1)">+</button></div></div>`;
-  }));
+      <div class="qt">${side ? `<button title="Passar 1 pro deck" onclick="moverSide('${esc(id)}',-1)">↑</button>` : ""}<button onclick="${muda}('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="${muda}('${esc(id)}',1)">+</button></div></div>`;
+  };
+  const html = blocos(linhas.map(({ id, n, c }) => linhaDeck(id, n, c, false)));
+  const nSide = sides.reduce((s, x) => s + x.n, 0);
   $("tela").innerHTML = `
     <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>
     <div class="row" style="margin-bottom:10px">
@@ -653,10 +716,14 @@ function telaDeck() {
     ${d.rascunho ? `<div class="card" style="border:2px dashed var(--tx3)"><b>Rascunho</b> — não ocupa cartas do estoque e não entra na lista de compras. Quando montar de verdade, desmarque em "Editar".</div>`
       : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh"><span class="dot" style="background:${corSleeve(d.sleeve)}"></span><b>${esc(d.sleeve)}</b></div>
         <div class="sub">${(() => { const outros = D.decks.filter(x => x !== d && !x.rascunho && grupo(x) === g).map(x => esc(x.name)); return outros.length ? `Divide o sleeve com: <b>${outros.join(", ")}</b>` : "Sozinho nesse sleeve."; })()}</div></div>` : ""}
-    ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.
-      <button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho todas</button></div>` : ""}
+    ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck:
+      ${st.naoTenho ? `<b>${st.naoTenho}</b> você não tem` : ""}${st.naoTenho && st.ocupada ? " e " : ""}${st.ocupada ? `<b>${st.ocupada}</b> ${st.ocupada > 1 ? "estão ocupadas" : "está ocupada"} em outros decks` : ""}.
+      ${st.naoTenho ? `<button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho as ${st.naoTenho}</button>` : ""}</div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${html || `<p class="muted">Deck vazio.</p>`}</div>
+    <div class="grp">Side deck · techs (${nSide}) · fora das ${st.total}, não ocupam cartas</div>
+    <div class="card">${nSide ? blocos(sides.map(({ id, n, c }) => linhaDeck(id, n, c, true))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. A seta ↑ passa uma cópia pro deck.</p>`}
+      <button class="btn sec" style="margin-top:8px" onclick="abrirBusca('side')">＋ Tech no side</button></div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
     <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {
       const [nome, cor] = ENERGIAS[t];
@@ -674,9 +741,24 @@ function jaTenho(id, n) {
   const c = D.cards[id]; c.qty += n; salvar(); render();
   toast(`+${n} ${c.name} no estoque (agora ${c.qty})`);
 }
+function mudaSide(id, n) {
+  const s = deckAberto.side ??= {};
+  s[id] = (s[id] || 0) + n; if (s[id] <= 0) delete s[id];
+  salvar(); render();
+}
+// passo > 0: do deck pro side; passo < 0: do side pro deck (uma cópia por vez)
+function moverSide(id, passo) {
+  const d = deckAberto, de = passo > 0 ? d.list : (d.side ??= {}), pra = passo > 0 ? (d.side ??= {}) : d.list;
+  if (!de[id]) return;
+  de[id]--; if (!de[id]) delete de[id];
+  pra[id] = (pra[id] || 0) + 1;
+  limitarProxy(d, id);
+  salvar(); render();
+  if ($("dlgCarta").open) abrirCarta(id);
+}
 function tenhoTodas() {
-  const U = calcUso(), g = grupo(deckAberto);
-  const faltas = Object.entries(deckAberto.list).map(([id, n]) => [id, n - Math.max(0, D.cards[id].qty - usado(U, id, g))]).filter(([, f]) => f > 0);
+  const U = calcUso();
+  const faltas = Object.entries(deckAberto.list).map(([id, n]) => [id, situacao(deckAberto, U, id, n - (deckAberto.proxy?.[id] || 0)).naoTenho]).filter(([, f]) => f > 0);
   const total = faltas.reduce((s, [, f]) => s + f, 0);
   if (!confirm(`Cadastrar no estoque as ${total} cartas que faltam nesse deck?`)) return;
   for (const [id, f] of faltas) D.cards[id].qty += f;
@@ -690,7 +772,11 @@ function mudaEnergia(t, n) {
 function mudaDeck(id, d) {
   const l = deckAberto.list; l[id] = (l[id] || 0) + d;
   if (l[id] <= 0) delete l[id];
-  salvar(); render();
+  limitarProxy(deckAberto, id); salvar(); render();
+}
+function limitarProxy(d, id) {
+  if (!d.proxy?.[id]) return;
+  d.proxy[id] = Math.min(d.proxy[id], d.list[id] || 0); if (!d.proxy[id]) delete d.proxy[id];
 }
 function apagarDeck() {
   if (!confirm(`Apagar o deck "${deckAberto.name}"? As cartas continuam no estoque.`)) return;
@@ -788,27 +874,40 @@ function somaPreco(itens) {
   return { valor: com.reduce((s, x) => s + x.c.preco * x.n, 0), sem: itens.length - com.length };
 }
 let lista = "comprar";
+const LISTAS = { comprar: ["🛒 Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: ["🔁 Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: ["🖨 Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"] };
+const itensLista = U => lista === "comprar" ? faltando(U) : lista === "troca" ? sobrando(U) : proxies();
 function telaCompras() {
-  const U = calcUso(), compra = lista === "comprar", itens = compra ? faltando(U) : sobrando(U);
+  const U = calcUso(), itens = itensLista(U), [, titulo, frase, vazio] = LISTAS[lista], px = lista === "proxy";
   vistos = itens.map(x => x.id);
-  const total = itens.reduce((s, x) => s + x.n, 0), p = somaPreco(itens);
+  const total = itens.reduce((s, x) => s + x.n, 0), p = px ? { valor: 0 } : somaPreco(itens);
   const valor = p.valor ? ` · ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "";
-  $("titulo").textContent = compra ? "Comprar" : "Pra troca";
-  $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} ${compra ? "pra fechar os decks" : "sobrando"}${valor}` : compra ? "nada faltando" : "nada sobrando";
-  const item = ({ id, c, n }) => grade() ? tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}${c.preco ? " · " + brl(c.preco) : ""}</span>`) : `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
+  $("titulo").textContent = titulo;
+  $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} ${frase}${valor}` : vazio;
+  const nota = ({ id, c, decks }) => lista === "comprar" ? decksDe(U, id).join(", ") : px ? decks.join(", ")
+    : usado(U, id) ? `${usado(U, id)} em deck` : legal(c) ? `guardando ${Math.min(c.qty, D.guardar ?? 4)}` : "rotacionada, nenhum deck usa";
+  const preco = (c, n) => c.preco && !px ? brl(c.preco * n) : "";
+  const item = x => {
+    const { id, c, n } = x;
+    if (grade()) return tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}${preco(c, 1) ? " · " + preco(c, 1) : ""}</span>`);
+    return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
-      <div class="sub">${c.preco ? `<b>${brl(c.preco * n)}</b> · ` : ""}${esc(compra ? decksDe(U, id).join(", ") : usado(U, id) ? `${usado(U, id)} em deck` : legal(c) ? `guardando ${Math.min(c.qty, D.guardar ?? 4)}` : "rotacionada, nenhum deck usa")}</div></div>
+      <div class="sub">${preco(c, n) ? `<b>${preco(c, n)}</b> · ` : ""}${esc(nota(x))}</div></div>
       <div class="qt"><b style="font-size:18px">${n}×</b></div></div>`;
-  $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">
-      <button class="btn${compra ? "" : " sec"}" onclick="lista='comprar';render()">🛒 Comprar</button>
-      <button class="btn${compra ? " sec" : ""}" onclick="lista='troca';render()">🔁 Pra troca</button></div>` +
-    (itens.length ? `<button class="btn sec" onclick="copiarLista()" style="margin-bottom:12px">Copiar lista</button><div class="card">${blocos(itens.map(item))}</div>`
-      : `<p class="muted">${compra ? "Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar."
-        : `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda em ⚙ Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`}</p>`);
+  };
+  const vazios = {
+    comprar: "Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.",
+    troca: `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda em ⚙ Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`,
+    proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “🖨 Proxy” numa carta que falta."
+  };
+  $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">` +
+      Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" style="padding:10px 4px;font-size:14px" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
+    (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">🖨 Imprimir</button>` : ""}</div>
+      <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${vazios[lista]}</p>`);
 }
 function copiarLista() {
-  const U = calcUso(), itens = lista === "comprar" ? faltando(U) : sobrando(U), p = somaPreco(itens);
-  const txt = itens.map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})${c.preco ? " — " + brl(c.preco * n) : ""}`).join("\n") + (p.valor ? `\nTotal: ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "");
+  const itens = itensLista(calcUso()), px = lista === "proxy", p = px ? { valor: 0 } : somaPreco(itens);
+  const txt = itens.map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})${c.preco && !px ? " — " + brl(c.preco * n) : ""}`).join("\n")
+    + (p.valor ? `\nTotal: ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "");
   navigator.clipboard.writeText(txt).then(() => toast("Lista copiada"), () => toast("Não deu pra copiar"));
 }
 function definirPreco(id, v) {

@@ -95,6 +95,10 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .sec summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--tx3);border-bottom:2px solid var(--tx3);transform:rotate(45deg) translateY(-3px);margin-left:4px}
 .sec[open] summary::after{transform:rotate(-135deg)}
 .secc{padding-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chipc{border:1px solid var(--line2);background:var(--card);color:var(--tx);border-radius:16px;padding:6px 11px;font-size:13px;cursor:pointer}
+.chipc.sel{outline:2px solid var(--ac);outline-offset:1px;background:var(--line)}
+.orgb.alvo{cursor:pointer;box-shadow:0 0 0 2px var(--ac) inset}
 .cp{display:grid;grid-template-columns:22px 1fr 96px;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .cp select,.cp input{padding:8px 9px;font-size:14px}
 .cp .loc{grid-column:2/4}
@@ -189,6 +193,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 </dialog>
 
 <dialog id="dlgPed"></dialog>
+<dialog id="dlgOrg" onclose="render();if($('dlgCarta').open)abrirCarta(orgId)"></dialog>
 <datalist id="pessoas"></datalist>
 
 <dialog id="dlgSet">
@@ -660,6 +665,7 @@ function abrirCarta(id) {
     <div class="row" style="margin:10px 0 6px"><b>Tenho</b><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
     <div class="sub" style="margin-bottom:12px">${[livre && `<span class="tag lv">${livre} livre${livre > 1 ? "s" : ""}</span>`, em && `<span class="tag ok">${em} em deck</span>`, o.col && `<span class="tag cl">${o.col} na coleção</span>`,
       fora && `<span class="tag wa">${fora} emprestada${fora > 1 ? "s" : ""}</span>`, cam && `<span class="tag cm">${cam} a caminho</span>`].filter(Boolean).join("") || `<span class="muted">nenhuma cópia</span>`}</div>
+    ${c.qty ? `<button class="btn sec" style="margin-bottom:12px" onclick="abrirOrganizar('${esc(id)}')">Organizar cópias (decks, coleção, local)</button>` : ""}
     ${dk ? `<div class="card" style="border-left:6px solid ${dk.sleeve ? corSleeve(dk.sleeve) : "var(--line2)"}"><b>${esc(dk.name)}</b> <span class="muted">${dk.list[id] || 0} no deck · ${dk.side?.[id] || 0} no side</span>
       <div class="row" style="margin-top:8px">
         ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">${ic("descer")} 1 pro side</button>` : ""}
@@ -683,6 +689,42 @@ function abrirCarta(id) {
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
   resumoCopias(id);
   if (!dlg.open) dlg.showModal();
+}
+
+// ---------- organizar cópias: um quadro por destino (decks que usam a carta, coleção, livres) ----------
+// Toca numa cópia e depois no quadro pra onde ela vai. Com uma cópia selecionada dá pra dizer onde ela fica guardada.
+let orgId = null, orgSel = null;
+function abrirOrganizar(id) { orgId = id; orgSel = null; desenharOrg(); if (!$("dlgOrg").open) $("dlgOrg").showModal(); }
+function desenharOrg() {
+  const id = orgId, c = D.cards[id], l = copias(c), o = ondeEstao(c);
+  const ondeDe = cp => cp.onde === "col" ? "col" : cp.onde && deckPorId(cp.onde) ? cp.onde : "";
+  const chip = (cp, i) => `<button class="chipc${orgSel === i ? " sel" : ""}" onclick="event.stopPropagation();orgSel=orgSel===${i}?null:${i};desenharOrg()">#${i + 1}${cp.v ? " " + esc(cp.v) : ""}${cp.pago ? " · " + brl(cp.pago) : ""}${cp.local ? " · " + esc(cp.local) : ""}</button>`;
+  const quadro = (k, titulo, cor, nota) => { const chips = l.map((cp, i) => ondeDe(cp) === k ? chip(cp, i) : "").join("");
+    return `<div class="card orgb${orgSel !== null && ondeDe(l[orgSel]) !== k ? " alvo" : ""}" style="border-left:6px solid ${cor}" onclick="moverCopia('${k}')">
+      <div class="slh"><b>${titulo}</b><span class="muted" style="font-size:13px">${nota}</span></div><div class="chips">${chips || `<span class="muted" style="font-size:13px">nenhuma</span>`}</div></div>`; };
+  const decks = D.decks.filter(d => !d.rascunho && (d.list[id] || o.decks[d.id]));
+  $("locais").innerHTML = [...new Set(Object.values(D.cards).flatMap(x => (x.copias || []).map(y => y.local)).filter(Boolean))].map(v => `<option value="${esc(v)}">`).join("");
+  $("dlgOrg").innerHTML = `<h2>Organizar cópias</h2>
+    <p class="muted" style="margin-top:-8px">${esc(c.name)} · ${esc(c.set)} ${esc(c.num)} · ${c.qty} cópia${c.qty === 1 ? "" : "s"}</p>
+    <p class="sub" style="margin-bottom:10px">${orgSel === null ? "Toque numa cópia e depois no quadro pra onde ela vai." : `<b>Cópia #${orgSel + 1} selecionada.</b> Toque no quadro de destino.`}</p>
+    ${orgSel !== null ? `<div class="row" style="margin-bottom:12px"><input list="locais" placeholder="Guardada onde? (ex.: Pasta 1)" value="${esc(l[orgSel].local || "")}" onchange="guardarCopia(this.value)"></div>` : ""}
+    ${decks.map(d => { const precisa = (d.list[id] || 0) - (d.proxy?.[id] || 0), aqui = o.decks[d.id] || 0;
+      return quadro(d.id, esc(d.name), d.sleeve ? corSleeve(d.sleeve) : "var(--line2)", `precisa ${precisa} · ${aqui} aqui${aqui > precisa ? ` · ${aqui - precisa} a mais` : ""}`); }).join("")}
+    ${quadro("col", "Na minha coleção", "#8a2a5c", "não vai pra deck nem troca")}
+    ${quadro("", "Livres", "var(--ok-tx)", "podem ir pra deck")}
+    ${decks.length ? "" : `<p class="muted">Nenhum deck usa essa carta.</p>`}
+    <button class="btn sec" style="margin-top:6px" onclick="dlgOrg.close()">Fechar</button>`;
+}
+function moverCopia(k) {
+  if (orgSel === null) return;
+  const cp = copias(D.cards[orgId])[orgSel];
+  k ? cp.onde = k : delete cp.onde;
+  orgSel = null; salvar(); desenharOrg();
+}
+function guardarCopia(local) {
+  const cp = copias(D.cards[orgId])[orgSel];
+  local.trim() ? cp.local = local.trim() : delete cp.local;
+  salvar(); // sem redesenhar: no celular o "change" vem junto com o toque no quadro, e redesenhar perderia esse toque
 }
 
 function navCarta(passo) {

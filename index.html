@@ -76,9 +76,12 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .ebtn{width:38px;height:38px;border-radius:50%;border:0;cursor:pointer;font-size:18px;flex:none}
 .tag.oc{background:#e3edfb;color:#1d4f91}
 .tag.cm{background:#dff3f1;color:#0f5f58}
-.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.seg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
 .seg .btn{padding:10px 4px;font-size:14px;width:100%!important;margin:0!important}
-@media (max-width:520px){ .seg{grid-template-columns:1fr 1fr} }
+@media (max-width:620px){ .seg{grid-template-columns:repeat(3,1fr)} }
+.pi{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.pi input{padding:8px 9px;font-size:14px}
+.cp .cpinfo{grid-column:2/4;font-size:12px}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
 @media (prefers-color-scheme:dark){ .tag.cm{background:#10302d;color:#8fe0d6} .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
 .tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
@@ -130,7 +133,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
   #tela .btn{width:auto;padding:11px 22px;margin-right:8px}
   #tela .row{justify-content:flex-start}
   #tela .row>.btn{flex:none}
-  #dlgBusca,#dlgSet,#dlgPedido{width:min(94vw,960px)}
+  #dlgBusca,#dlgSet,#dlgPedido,#dlgPed{width:min(94vw,960px)}
   #toast{bottom:24px;margin-left:105px}
 }
 </style>
@@ -178,6 +181,9 @@ dialog h2{font-size:17px;margin-bottom:12px}
   <div id="pedidoRes" style="margin-top:12px"></div>
   <div class="row" style="margin-top:12px"><button class="btn sec" onclick="dlgPedido.close()">Fechar</button><button class="btn hide" id="pedidoOk" onclick="aplicarPedidos()">Cadastrar</button></div>
 </dialog>
+
+<dialog id="dlgPed"></dialog>
+<datalist id="pessoas"></datalist>
 
 <dialog id="dlgSet">
   <h2>Cadastrar por coleção</h2>
@@ -245,6 +251,7 @@ const ICONES = {
   imprimir: "M7 9V3h10v6M7 17H4v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6h-3M7 14h10v7H7z",
   trocar: "M4 9h15l-3-3M20 15H5l3 3",
   ok: "M5 12.5l4.5 4.5L19 7.5",
+  recibo: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
   importar: "M12 3v12M7 10l5 5 5-5M4 17v3h16v-3",
   caminhao: "M2 6h12v10H2zM14 9h4.5L22 12.5V16h-8" + circ(6, 18, 1.8) + circ(17, 18, 1.8),
   subir: "M12 19V5M6 11l6-6 6 6",
@@ -323,7 +330,7 @@ function copiarPraTodas(id) {
   for (const cp of l.slice(1)) for (const k of ["v", "pago", "local"]) p[k] ? cp[k] = p[k] : delete cp[k];
   salvar(); abrirCarta(id);
 }
-const pagoTotal = c => (c.copias || []).reduce((s, x) => s + (x.pago || 0), 0);
+const pagoTotal = c => (c.copias || []).reduce((s, x) => s + (x.pago || 0) + (x.frete || 0), 0);
 // "2 Reverse · em Pasta 1" — o que foi anotado nas cópias, pra mostrar na lista
 function resumoTexto(c) {
   const v = {}, locais = new Set();
@@ -332,7 +339,7 @@ function resumoTexto(c) {
 }
 function resumoCopias(id) {
   const c = D.cards[id], el = $("cpResumo"); if (!el) return;
-  const pago = pagoTotal(c), comPreco = (c.copias || []).filter(x => x.pago).length;
+  const pago = pagoTotal(c), comPreco = (c.copias || []).filter(x => x.pago || x.frete).length;
   el.textContent = pago ? `Você pagou ${brl(pago)} em ${comPreco} cópia${comPreco > 1 ? "s" : ""} (média ${brl(pago / comPreco)}).` : "Anote a versão, quanto pagou e onde está guardada.";
 }
 function htmlCopias(id) {
@@ -341,7 +348,7 @@ function htmlCopias(id) {
   return l.map((cp, i) => `<div class="cp"><b>${i + 1}</b>
       <select onchange="setCopia('${esc(id)}',${i},'v',this.value)">${VERSOES.map(v => `<option${(cp.v || "Normal") === v ? " selected" : ""}>${v}</option>`).join("")}</select>
       <input inputmode="decimal" placeholder="Pago R$" value="${cp.pago ? cp.pago.toFixed(2).replace(".", ",") : ""}" onchange="setCopia('${esc(id)}',${i},'pago',this.value)">
-      <input class="loc" list="locais" placeholder="Onde está (ex.: Pasta 1, Caixa bulk)" value="${esc(cp.local || "")}" onchange="setCopia('${esc(id)}',${i},'local',this.value)"></div>`).join("")
+      <input class="loc" list="locais" placeholder="Onde está (ex.: Pasta 1, Caixa bulk)" value="${esc(cp.local || "")}" onchange="setCopia('${esc(id)}',${i},'local',this.value)">${cp.ped || cp.frete ? `<span class="muted cpinfo">${cp.ped ? "pedido #" + esc(cp.ped) : ""}${cp.ped && cp.frete ? " · " : ""}${cp.frete ? "+ frete " + brl(cp.frete) : ""}</span>` : ""}</div>`).join("")
     + (l.length > 1 ? `<button class="btn sec" style="padding:8px;font-size:13px" onclick="copiarPraTodas('${esc(id)}')">Repetir a 1ª cópia em todas</button>` : "");
 }
 const $ = id => document.getElementById(id);
@@ -1113,19 +1120,24 @@ async function lerPedidos(arquivos) {
     mostrarPedidos();
   } catch (e) { msg("Não deu: " + esc(e.message)); }
 }
+const ehEnergia = i => /^(SVE|MEE|SVEN)$/.test(i.cod || "");
+const hoje = () => new Date().toISOString().slice(0, 10);
+const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function mostrarPedidos() {
   const ok = pedidosLidos.filter(p => !p.erro);
   $("pedidoRes").innerHTML = pedidosLidos.filter(p => p.erro).map(p => `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">${esc(p.erro)}</div>`).join("") + ok.sort((a, b) => a.data.localeCompare(b.data)).map(p => {
     const cartas = p.itens.filter(i => i.id), copias = cartas.reduce((s, i) => s + i.n, 0), valor = cartas.reduce((s, i) => s + i.n * i.preco, 0);
-    const energia = p.itens.filter(i => /^(SVE|MEE|SVEN)$/.test(i.cod || "")).reduce((s, i) => s + i.n, 0);
-    const naoAchei = p.itens.filter(i => i.cod && !i.id && !/^(SVE|MEE|SVEN)$/.test(i.cod)), produtos = p.itens.filter(i => i.produto);
-    const ja = D.pedidos?.[p.pedido];
+    const energia = p.itens.filter(ehEnergia).reduce((s, i) => s + i.n, 0);
+    const naoAchei = p.itens.filter(i => i.cod && !i.id && !ehEnergia(i)), produtos = p.itens.filter(i => i.produto);
+    // pedido importado antes da lista de pedidos existir: só tem a data guardada
+    const ja = D.pedidos?.[p.pedido], antigo = typeof ja === "string", quando = antigo ? ja : ja?.importado;
     return `<div class="card"><div class="slh"><b>#${p.pedido}</b><span class="muted">${p.data.split("-").reverse().join("/")} · ${copias} carta${copias === 1 ? "" : "s"} · ${brl(valor)}</span></div>
-      ${ja ? `<p class="sub" style="color:var(--wa-tx)">Já importado em ${ja.split("-").reverse().join("/")}.</p>` : ""}
+      ${ja ? `<p class="sub" style="color:var(--wa-tx)">Já importado em ${quando.split("-").reverse().join("/")}.${antigo ? " Escolha “só guardar o pedido” pra ele entrar na lista de pedidos sem duplicar as cartas." : ""}</p>` : ""}
       <select data-p="${p.pedido}" style="margin:8px 0 4px">
         <option value="chegou"${ja ? "" : " selected"}>Já chegou — vai pro estoque</option>
         <option value="caminho">Ainda não chegou — vai pra "a caminho"</option>
-        <option value="pular"${ja ? " selected" : ""}>Não importar</option></select>
+        ${antigo ? `<option value="registro" selected>Já cadastrei essas cartas — só guardar o pedido</option>` : ""}
+        <option value="pular"${ja && !antigo ? " selected" : ""}>Não importar</option></select>
       ${energia ? `<p class="sub muted">${energia} energia${energia > 1 ? "s" : ""} básica${energia > 1 ? "s" : ""} fica${energia > 1 ? "m" : ""} de fora (não entram no estoque).</p>` : ""}
       ${produtos.length ? `<p class="sub muted">Fora do estoque (não é carta avulsa): ${produtos.map(i => esc(`${i.n}x ${i.produto}`)).join("; ")}.</p>` : ""}
       ${naoAchei.length ? `<p class="sub" style="color:var(--er-tx)">Não achei na base: ${naoAchei.map(i => esc(`${i.n}x ${i.nome} (${i.cod} ${i.num})`)).join("; ")}.</p>` : ""}</div>`;
@@ -1137,18 +1149,115 @@ function aplicarPedidos() {
   for (const p of pedidosLidos.filter(p => !p.erro)) {
     const destino = document.querySelector(`#pedidoRes select[data-p="${p.pedido}"]`).value;
     if (destino === "pular") continue;
-    for (const it of p.itens.filter(i => i.id)) {
-      const c = D.cards[it.id], v = versaoMyp(it.cond);
-      if (destino === "chegou") {
-        copias(c).push(...Array.from({ length: it.n }, () => ({ pago: it.preco, ...(v && { v }) }))); c.qty += it.n; est += it.n;
-      } else {
-        (D.caminho ??= []).push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), card: it.id, n: it.n, de: "MYP #" + p.pedido, pago: it.preco, ...(v && { v }), data: p.data }); cam += it.n;
-      }
-    }
-    (D.pedidos ??= {})[p.pedido] = new Date().toISOString().slice(0, 10);
+    const ped = (D.pedidos ??= {})[p.pedido] = {
+      data: p.data, importado: hoje(), destino, frete: 0,
+      itens: p.itens.map(i => { const v = versaoMyp(i.cond || ""); return { ...(i.id && { id: i.id }), nome: i.produto || i.nome, ...(i.cod && { cod: i.cod, num: i.num }), n: i.n, preco: i.preco, ...(v && { v }), ...(ehEnergia(i) && { energia: true }) }; })
+    };
+    ped.itens.forEach((it, k) => {
+      if (!it.id || it.energia) return;
+      if (destino === "chegou") { entrarEstoque(p.pedido, k); est += it.n; }
+      else if (destino === "caminho") { entrarCaminho(p.pedido, k); cam += it.n; }
+      else ligarCopiasAntigas(p.pedido, k);
+    });
   }
   salvar(); $("dlgPedido").close(); render();
-  toast(`${est ? est + " cartas no estoque" : ""}${est && cam ? " · " : ""}${cam ? cam + " a caminho" : ""}` || "Nada importado");
+  toast(`${est ? est + " cartas no estoque" : ""}${est && cam ? " · " : ""}${cam ? cam + " a caminho" : ""}` || "Pedidos guardados");
+}
+
+// ---------- pedidos: frete rateado e compra dividida com outras pessoas ----------
+// Cada cópia (e cada "a caminho") que veio de pedido guarda ped (nº do pedido) e it (qual item), pra frete e dono acharem quem é quem.
+function entrarEstoque(num, k) {
+  const ped = D.pedidos[num], it = ped.itens[k], c = D.cards[it.id], f = fretePorCopia(ped, k);
+  copias(c).push(...Array.from({ length: it.n }, () => ({ pago: it.preco, ...(it.v && { v: it.v }), ...(f && { frete: f }), ped: num, it: k }))); c.qty += it.n;
+}
+function entrarCaminho(num, k) {
+  const ped = D.pedidos[num], it = ped.itens[k], f = fretePorCopia(ped, k);
+  (D.caminho ??= []).push({ id: novoId(), card: it.id, n: it.n, de: "MYP #" + num, pago: it.preco, ...(it.v && { v: it.v }), ...(f && { frete: f }), data: ped.data, ped: num, it: k });
+}
+// pedido importado antes: liga as cópias que já existem (mesma carta e mesmo valor pago) e o "a caminho" desse pedido
+function ligarCopiasAntigas(num, k) {
+  const it = D.pedidos[num].itens[k];
+  let falta = it.n;
+  for (const e of D.caminho || []) if (falta && e.ped == null && e.card === it.id && e.de === "MYP #" + num) { e.ped = num; e.it = k; falta -= e.n; }
+  for (const cp of copias(D.cards[it.id])) if (falta > 0 && cp.ped == null && cp.pago === it.preco) { cp.ped = num; cp.it = k; falta--; }
+}
+// Frete dividido na proporção do valor de cada item (produtos e energias também entram na conta)
+function freteDoItem(ped, k) {
+  const tot = ped.itens.reduce((s, i) => s + i.n * i.preco, 0), it = ped.itens[k];
+  return tot ? (ped.frete || 0) * it.n * it.preco / tot : 0;
+}
+const fretePorCopia = (ped, k) => +(freteDoItem(ped, k) / ped.itens[k].n).toFixed(4);
+function ratear(num) {
+  const ped = D.pedidos[num];
+  for (const x of [...Object.values(D.cards).flatMap(c => c.copias || []), ...(D.caminho || [])])
+    if (x.ped === num) { const f = fretePorCopia(ped, x.it); f ? x.frete = f : delete x.frete; }
+}
+function definirFrete(num, v) { D.pedidos[num].frete = numero(v); ratear(num); salvar(); abrirPed(num); }
+// Item de outra pessoa sai do seu estoque (ou do "a caminho"); voltando pra você, entra de novo.
+function mudarDono(num, k, dono) {
+  const ped = D.pedidos[num], it = ped.itens[k], antes = it.dono || "";
+  dono = dono.trim();
+  if (dono === antes) return;
+  dono ? it.dono = dono : delete it.dono;
+  if (it.id && !it.energia && !antes !== !dono) {
+    if (dono) { // tira as cópias desse item
+      const c = D.cards[it.id], l = copias(c), fica = l.filter(x => !(x.ped === num && x.it === k));
+      c.qty -= l.length - fica.length; c.copias = fica;
+      D.caminho = (D.caminho || []).filter(e => !(e.ped === num && e.it === k));
+    } else if (ped.destino === "caminho" && (D.caminho || []).some(e => e.ped === num)) entrarCaminho(num, k);
+    else entrarEstoque(num, k);
+  }
+  salvar(); abrirPed(num);
+}
+// quanto é de cada pessoa ("" = você): cartas + parte do frete
+function contasPedido(ped) {
+  const P = {};
+  ped.itens.forEach((it, k) => { const p = P[it.dono || ""] ??= { n: 0, cartas: 0, frete: 0 }; p.n += it.n; p.cartas += it.n * it.preco; p.frete += freteDoItem(ped, k); });
+  return P;
+}
+// nome do item: o do cadastro da carta (o do PDF vem repetido em português e inglês)
+const nomeItem = it => { const c = it.id && D.cards[it.id]; return c ? `${c.name} (${c.set} ${c.num})` : it.nome; };
+function copiarCobranca(num, dono) {
+  const ped = D.pedidos[num], p = contasPedido(ped)[dono];
+  const txt = [`Pedido MYP Cards #${num} (${ped.data.split("-").reverse().join("/")}) — ${dono}`,
+    ...ped.itens.filter(i => (i.dono || "") === dono).map(i => `${i.n}x ${nomeItem(i)} — ${brl(i.n * i.preco)}`),
+    `Cartas: ${brl(p.cartas)}`, `Frete (parte): ${brl(p.frete)}`, `Total: ${brl(p.cartas + p.frete)}`].join("\n");
+  navigator.clipboard.writeText(txt).then(() => toast("Cobrança copiada"), () => prompt("Copie a cobrança:", txt));
+}
+function htmlPedidos() {
+  const l = Object.entries(D.pedidos || {}).sort((a, b) => (b[1].data || b[1]).localeCompare(a[1].data || a[1]));
+  if (!l.length) return `<p class="muted">Nenhum pedido ainda. No Estoque, use “Importar pedidos da MYP Cards”.</p>`;
+  return `<div class="lst">` + l.map(([num, ped]) => {
+    if (typeof ped === "string") return `<div class="card"><b>#${num}</b> <span class="muted">importado em ${ped.split("-").reverse().join("/")}</span>
+      <p class="sub muted">Importado antes da lista de pedidos. Importe o PDF de novo e escolha “só guardar o pedido” pra ver os detalhes.</p></div>`;
+    const P = contasPedido(ped), eu = P[""] || { n: 0, cartas: 0, frete: 0 }, outros = Object.entries(P).filter(([d]) => d);
+    const tot = Object.values(P).reduce((s, p) => s + p.cartas, 0), n = ped.itens.reduce((s, i) => s + i.n, 0);
+    return `<div class="card" style="cursor:pointer" onclick="abrirPed('${num}')"><div class="slh"><b>#${num}</b><span class="muted">${ped.data.split("-").reverse().join("/")} · ${n} cartas${(D.caminho || []).some(e => e.ped === num) ? " · a caminho" : ""}</span></div>
+      <div class="sub">${ped.frete ? `${brl(tot)} + frete ${brl(ped.frete)} = <b>${brl(tot + ped.frete)}</b>` : `<b>${brl(tot)}</b> · sem frete anotado`}</div>
+      ${outros.length ? `<div class="sub">Sua parte: <b>${brl(eu.cartas + eu.frete)}</b> · ${outros.map(([d, p]) => `${esc(d)}: ${brl(p.cartas + p.frete)}`).join(" · ")}</div>` : ""}</div>`;
+  }).join("") + `</div>`;
+}
+function abrirPed(num) {
+  const ped = D.pedidos[num], dlg = $("dlgPed"), rolagem = dlg.scrollTop, P = contasPedido(ped);
+  $("pessoas").innerHTML = [...new Set([...Object.values(D.pedidos || {}).flatMap(p => (p.itens || []).map(i => i.dono)), ...D.emp.map(e => e.pessoa)].filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
+  dlg.innerHTML = `<h2>Pedido #${num}</h2>
+    <p class="muted" style="margin-top:-8px">MYP Cards · ${ped.data.split("-").reverse().join("/")} · importado em ${ped.importado.split("-").reverse().join("/")}</p>
+    <div class="field"><label>Frete que você pagou (R$)</label><input inputmode="decimal" placeholder="0,00" value="${ped.frete ? ped.frete.toFixed(2).replace(".", ",") : ""}" onchange="definirFrete('${num}',this.value)"></div>
+    <p class="muted" style="margin-top:-6px">O frete é dividido entre os itens na proporção do valor de cada um, e cada cópia guarda a sua parte.</p>
+    <div class="grp">Quem paga o quê</div>
+    ${Object.entries(P).sort(([a], [b]) => a.localeCompare(b)).map(([d, p]) => `<div class="row" style="margin-bottom:8px"><div><b>${d ? esc(d) : "Você"}</b>
+      <div class="sub">${p.n} carta${p.n > 1 ? "s" : ""} ${brl(p.cartas)} + frete ${brl(p.frete)} = <b>${brl(p.cartas + p.frete)}</b></div></div>
+      ${d ? `<button class="btn sec" style="flex:none;width:auto;padding:8px 12px;font-size:13px" data-d="${esc(d)}" onclick="copiarCobranca('${num}',this.dataset.d)">Copiar cobrança</button>` : ""}</div>`).join("")}
+    <div class="grp">Itens (${ped.itens.length}) · de quem é cada um</div>
+    <p class="muted" style="margin-top:-4px">Deixe em branco o que é seu. Escrevendo o nome de outra pessoa, o item sai do seu estoque.</p>
+    <input placeholder="Filtrar itens…" style="margin-bottom:8px" oninput="const q=norm(this.value);document.querySelectorAll('#dlgPed .pi').forEach(e=>e.classList.toggle('hide',!e.dataset.t.includes(q)))">
+    ${ped.itens.map((it, k) => `<div class="pi" data-t="${esc(norm(it.nome + " " + (it.cod || "") + " " + (it.num || "")))}"><div>
+        <b>${it.n}×</b> ${esc(nomeItem(it))}
+        <div class="sub muted">${brl(it.preco)} cada${it.v ? " · " + esc(it.v) : ""}${it.energia ? " · energia básica" : !it.id ? " · fora do estoque" : ""}</div></div>
+      <input list="pessoas" placeholder="Você" value="${esc(it.dono || "")}" onchange="mudarDono('${num}',${k},this.value)"></div>`).join("")}
+    <button class="btn sec" style="margin-top:12px" onclick="dlgPed.close();render()">Fechar</button>`;
+  if (!dlg.open) dlg.showModal();
+  dlg.scrollTop = rolagem;
 }
 function abrirImportar() {
   $("pedidoRes").innerHTML = ""; $("fPedido").value = ""; $("pedidoOk").classList.add("hide");
@@ -1185,7 +1294,7 @@ function comprei(id, sugestao = 1) {
 // chegou: entra no estoque e as cópias novas já vêm com o valor pago anotado
 function chegou(eid) {
   const e = D.caminho.find(x => x.id === eid), c = D.cards[e.card];
-  copias(c).push(...Array.from({ length: e.n }, () => ({ ...(e.pago && { pago: e.pago }), ...(e.v && { v: e.v }) }))); c.qty += e.n;
+  copias(c).push(...Array.from({ length: e.n }, () => ({ ...(e.pago && { pago: e.pago }), ...(e.v && { v: e.v }), ...(e.frete && { frete: e.frete }), ...(e.ped != null && { ped: e.ped, it: e.it }) }))); c.qty += e.n;
   D.caminho = D.caminho.filter(x => x !== e); salvar(); render();
   toast(`${e.n}× ${c.name} no estoque (agora ${c.qty})`);
 }
@@ -1197,11 +1306,17 @@ function cancelarCaminho(eid) {
 const desde = data => { const d = Math.round((Date.now() - new Date(data + "T12:00")) / 864e5); return d <= 0 ? "comprada hoje" : `há ${d} dia${d > 1 ? "s" : ""}`; };
 
 let lista = "comprar";
-const LISTAS = { comprar: [ic("carrinho") + " Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: [ic("repetir") + " Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: [ic("imprimir") + " Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"], caminho: [ic("caminhao") + " A caminho", "A caminho", "a caminho", "nada a caminho"] };
+const LISTAS = { comprar: [ic("carrinho") + " Comprar", "Comprar", "pra fechar os decks", "nada faltando"], troca: [ic("repetir") + " Pra troca", "Pra troca", "sobrando", "nada sobrando"], proxy: [ic("imprimir") + " Proxies", "Proxies", "pra imprimir", "nenhuma proxy marcada"], caminho: [ic("caminhao") + " A caminho", "A caminho", "a caminho", "nada a caminho"], pedidos: [ic("recibo") + " Pedidos", "Pedidos", "", ""] };
 const itensLista = U => lista === "comprar" ? faltando(U) : lista === "troca" ? sobrando(U) : lista === "proxy" ? proxies().filter(x => x.n > 0)
   : (D.caminho || []).map(e => ({ id: e.card, c: D.cards[e.card], n: e.n, e })).sort((a, b) => a.e.data.localeCompare(b.e.data));
-const precoCaminho = itens => ({ valor: itens.reduce((s, x) => s + x.e.pago * x.n, 0), sem: itens.filter(x => !x.e.pago).length });
+const precoCaminho = itens => ({ valor: itens.reduce((s, x) => s + (x.e.pago + (x.e.frete || 0)) * x.n, 0), sem: itens.filter(x => !x.e.pago).length });
 function telaCompras() {
+  if (lista === "pedidos") {
+    const n = Object.keys(D.pedidos || {}).length;
+    $("titulo").textContent = "Pedidos"; $("sub").textContent = n ? `${n} pedido${n > 1 ? "s" : ""}` : "nenhum pedido"; vistos = [];
+    $("tela").innerHTML = segListas() + htmlPedidos();
+    return;
+  }
   const U = calcUso(), itens = itensLista(U), [, titulo, frase, vazio] = LISTAS[lista], px = lista === "proxy", cm = lista === "caminho";
   vistos = itens.map(x => x.id);
   const total = itens.reduce((s, x) => s + x.n, 0), p = px ? { valor: 0 } : cm ? precoCaminho(itens) : somaPreco(itens);
@@ -1214,7 +1329,7 @@ function telaCompras() {
   const item = x => {
     const { id, c, n, e } = x;
     if (cm) {
-      const sub = `${e.de ? "de " + esc(e.de) + " · " : ""}${e.pago ? brl(e.pago * n) + " · " : ""}${desde(e.data)}`;
+      const sub = `${e.de ? "de " + esc(e.de) + " · " : ""}${e.pago ? brl((e.pago + (e.frete || 0)) * n) + " · " : ""}${desde(e.data)}`;
       if (grade()) return tile(id, c, n + "×", `<span class="muted">${sub}</span>`);
       return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
         <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${sub}</div></div>
@@ -1237,12 +1352,12 @@ function telaCompras() {
     proxy: "Nenhuma proxy marcada. Dentro do deck, toque em “Proxy” numa carta que falta.",
     caminho: "Nenhuma carta a caminho. Na lista de compras, o check marca a carta como comprada."
   };
-  $("tela").innerHTML = `<div class="seg">` +
-      Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
+  $("tela").innerHTML = segListas() +
     (cm ? `<button class="btn sec" style="margin-bottom:12px" onclick="abrirBusca('caminho')">＋ Comprei outra carta</button>` : "") +
     (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()" title="Marcar todas como impressas">${ic("ok")} Todas</button>` : ""}</div>
       <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${px && prontas.length ? "Tudo impresso." : vazios[lista]}</p>`) + impressas;
 }
+const segListas = () => `<div class="seg">` + Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>`;
 function copiarLista() {
   const itens = itensLista(calcUso()), px = lista === "proxy", cm = lista === "caminho", p = px ? { valor: 0 } : cm ? precoCaminho(itens) : somaPreco(itens);
   const txt = itens.map(({ c, n, e }) => `${n}x ${c.name} (${c.set} ${c.num})${cm ? (e.de ? " — " + e.de : "") + (e.pago ? " — " + brl(e.pago * n) : "") : c.preco && !px ? " — " + brl(c.preco * n) : ""}`).join("\n")

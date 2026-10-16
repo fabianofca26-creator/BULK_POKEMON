@@ -1210,6 +1210,22 @@ function mudarDono(num, k, dono) {
   salvar(); abrirPed(num);
 }
 // quanto é de cada pessoa ("" = você): cartas + parte do frete
+// algo desse pedido já está no estoque?
+const chegouAlgo = num => Object.values(D.cards).some(c => (c.copias || []).some(x => x.ped === num));
+// Só dá pra excluir pedido que ainda não chegou: some o registro e o que estava "a caminho" (as cartas voltam pra lista de compras).
+function excluirPedido(num) {
+  const n = (D.caminho || []).filter(e => e.ped === num).reduce((s, e) => s + e.n, 0);
+  if (!confirm(`Excluir o pedido #${num}?${n ? ` As ${n} cartas a caminho saem da lista.` : ""} Dá pra importar o PDF de novo depois.`)) return;
+  D.caminho = (D.caminho || []).filter(e => e.ped !== num);
+  delete D.pedidos[num];
+  salvar(); $("dlgPed").close(); render(); toast(`Pedido #${num} excluído`);
+}
+function chegouPedido(num) {
+  const es = (D.caminho || []).filter(e => e.ped === num);
+  if (!confirm(`Marcar as ${es.reduce((s, e) => s + e.n, 0)} cartas do pedido #${num} como chegadas?`)) return;
+  for (const e of es) chegou(e.id);
+  abrirPed(num);
+}
 function contasPedido(ped) {
   const P = {};
   ped.itens.forEach((it, k) => { const p = P[it.dono || ""] ??= { n: 0, cartas: 0, frete: 0 }; p.n += it.n; p.cartas += it.n * it.preco; p.frete += freteDoItem(ped, k); });
@@ -1255,6 +1271,8 @@ function abrirPed(num) {
         <b>${it.n}×</b> ${esc(nomeItem(it))}
         <div class="sub muted">${brl(it.preco)} cada${it.v ? " · " + esc(it.v) : ""}${it.energia ? " · energia básica" : !it.id ? " · fora do estoque" : ""}</div></div>
       <input list="pessoas" placeholder="Você" value="${esc(it.dono || "")}" onchange="mudarDono('${num}',${k},this.value)"></div>`).join("")}
+    ${(D.caminho || []).some(e => e.ped === num) ? `<button class="btn" style="margin-top:12px" onclick="chegouPedido('${num}')">${ic("ok")} Chegou o pedido</button>` : ""}
+    ${chegouAlgo(num) ? "" : `<button class="btn del" style="margin-top:12px" onclick="excluirPedido('${num}')">Excluir pedido</button>`}
     <button class="btn sec" style="margin-top:12px" onclick="dlgPed.close();render()">Fechar</button>`;
   if (!dlg.open) dlg.showModal();
   dlg.scrollTop = rolagem;

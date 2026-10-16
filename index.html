@@ -71,6 +71,8 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .res .tw{position:relative}
 .res .qb{position:absolute;top:4px;right:4px;background:var(--ac);color:var(--ac-tx);border-radius:8px;padding:0 7px;font-weight:700;font-size:13px}
 .res .tag{margin:2px 1px 0}
+.en{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
+.ebtn{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;font-size:14px;flex:none}
 .grp{font-size:12px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px}
 nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
 nav button{flex:1;background:none;border:0;padding:10px 0 12px;font-size:12px;color:var(--tx3);cursor:pointer}
@@ -163,8 +165,26 @@ dialog h2{font-size:17px;margin-bottom:12px}
 <script>
 const API = "https://api.tcgdex.net/v2";
 const KEY = "pkst_v1";
-// cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energia,falhas:[linhas]}
+// cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energias:{tipo:n},falhas:[linhas]}
 let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
+
+// Energias básicas ficam no deck por tipo, fora do estoque. tipo -> [nome, cor, nº na coleção SVE]
+const ENERGIAS = { G: ["Grama", "#3f9b45", 1], R: ["Fogo", "#e0522c", 2], W: ["Água", "#3a86d6", 3], L: ["Raio", "#d9b21c", 4],
+  P: ["Psíquica", "#9a4fc2", 5], F: ["Luta", "#b0652f", 6], D: ["Escuridão", "#3d3f55", 7], M: ["Metal", "#8e98a4", 8], "?": ["básica (tipo?)", "#777", 0] };
+const PALAVRA = { grass: "G", fire: "R", water: "W", lightning: "L", psychic: "P", fighting: "F", darkness: "D", metal: "M" };
+function tipoEnergia(l) {
+  let m = l.match(/\{([GRWLPFDM])\}/i); if (m) return m[1].toUpperCase();
+  m = l.match(/\b(grass|fire|water|lightning|psychic|fighting|darkness|metal)\b/i); if (m) return PALAVRA[m[1].toLowerCase()];
+  m = l.match(/\b(SVE|MEE)\s+0*([1-8])$/i); return m ? "GRWLPFDM"[m[2] - 1] : "?";
+}
+const totalEnergia = d => Object.values(d.energias || {}).reduce((s, n) => s + n, 0);
+// decks salvos antes da contagem por tipo
+for (const d of D.decks) if (!d.energias) {
+  d.energias = {};
+  for (const l of d.energiaTxt || []) { const t = tipoEnergia(l); d.energias[t] = (d.energias[t] || 0) + parseInt(l, 10); }
+  const resto = (d.energia || 0) - totalEnergia(d); if (resto > 0) d.energias["?"] = resto;
+  delete d.energia; delete d.energiaTxt;
+}
 let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", modoBusca = null, trocaDe = null;
 
 const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
@@ -391,7 +411,7 @@ function telaDecks() {
     }).join("") + "</div>").join("") + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
 }
 function statusDeck(d, U) {
-  let total = d.energia || 0, falta = 0, rot = 0;
+  let total = totalEnergia(d), falta = 0, rot = 0;
   for (const [id, n] of Object.entries(d.list)) {
     const c = D.cards[id]; total += n;
     falta += Math.max(0, n - Math.max(0, c.qty - usado(U, id, grupo(d))));
@@ -425,10 +445,23 @@ function telaDeck() {
     <button class="btn sec" onclick="exportarDeck()" style="margin-bottom:10px">Exportar lista (copiar)</button>
     ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.</div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
-    <div class="card">${html || `<p class="muted">Deck vazio.</p>`}
-    ${d.energia ? `<div class="lin"><div class="ph"></div><div class="i"><div class="nm">Energias básicas</div><div class="sub">fora do controle de estoque</div></div><div class="qt"><b>${d.energia}</b></div></div>` : ""}</div>
+    <div class="card">${html || `<p class="muted">Deck vazio.</p>`}</div>
+    <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
+    <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {
+      const [nome, cor] = ENERGIAS[t];
+      return grade() ? `<div class="res"><div class="tw"><div class="en" style="background:${cor};aspect-ratio:63/88;border-radius:6px">${t}</div><span class="qb">${n}</span></div><b>Energia ${nome}</b></div>`
+        : `<div class="lin"><div class="ph en" style="background:${cor}">${t}</div><div class="i"><div class="nm">Energia ${nome}</div></div>
+          <div class="qt"><button onclick="mudaEnergia('${t}',-1)">−</button><b>${n}</b><button onclick="mudaEnergia('${t}',1)">+</button></div></div>`;
+    }))}
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><span class="muted" style="flex:none">Somar +1:</span>
+        ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${t}</button>`).join("")}</div></div>
     ${d.falhas?.length ? `<div class="card"><b>Não encontrei na base:</b>${d.falhas.map(l => `<div class="sub">${esc(l)}</div>`).join("")}<button class="btn sec" style="margin-top:8px" onclick="deckAberto.falhas=[];salvar();render()">Limpar aviso</button></div>` : ""}
     <button class="btn del" onclick="apagarDeck()" style="margin-top:6px">Apagar deck</button>`;
+}
+function mudaEnergia(t, n) {
+  const e = deckAberto.energias ??= {};
+  e[t] = (e[t] || 0) + n; if (e[t] <= 0) delete e[t];
+  salvar(); render();
 }
 function mudaDeck(id, d) {
   const l = deckAberto.list; l[id] = (l[id] || 0) + d;
@@ -451,7 +484,7 @@ const editarDeck = () => prepararFormDeck(deckAberto);
 async function salvarDeck() {
   const nome = $("dNome").value.trim(); if (!nome) return $("dNome").focus();
   let d = deckAberto;
-  if (!d) { d = { id: Date.now().toString(36), name: "", sleeve: "", list: {}, energia: 0, falhas: [] }; }
+  if (!d) { d = { id: Date.now().toString(36), name: "", sleeve: "", list: {}, energias: {}, falhas: [] }; }
   d.name = nome; d.sleeve = $("dSleeve").value.trim();
   const txt = $("dLista").value.trim();
   if (txt) {
@@ -477,19 +510,20 @@ async function idDaCarta(cod, num) {
   return c?.id || null;
 }
 async function lerLista(txt) {
-  const list = {}, falhas = [], energiaTxt = []; let energia = 0;
+  const list = {}, falhas = [], energias = {};
+  const somaEnergia = (n, l) => { const t = tipoEnergia(l); energias[t] = (energias[t] || 0) + +n; };
   const linhas = txt.split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^(pok[eé]mon|trainer|energy|total)\b.*:/i.test(l) && !/^total/i.test(l));
   await Promise.all(linhas.map(async l => {
     const m = l.match(/^(\d+)\s+(.+?)\s+([A-Za-z0-9-]{2,8})\s+([A-Za-z]*\d+[A-Za-z]?)$/);
-    if (!m) { const e = l.match(/^(\d+)\s+(.+)$/); if (e && BASICA.test(e[2].trim())) { energia += +e[1]; energiaTxt.push(l); } else falhas.push(l); return; }
+    if (!m) { const e = l.match(/^(\d+)\s+(.+)$/); if (e && BASICA.test(e[2].trim())) somaEnergia(e[1], l); else falhas.push(l); return; }
     const [, n, nome, cod, num] = m;
-    if (BASICA.test(nome) || /^(SVE|MEE|SVEN)$/i.test(cod)) { energia += +n; energiaTxt.push(l); return; }
+    if (BASICA.test(nome) || /^(SVE|MEE|SVEN)$/i.test(cod)) { somaEnergia(n, l); return; }
     const id = await idDaCarta(cod, num);
     if (!id) return falhas.push(l);
     await garantir(id);
     list[id] = (list[id] || 0) + +n;
   }));
-  return { list, energia, energiaTxt, falhas };
+  return { list, energias, falhas };
 }
 // Exporta no mesmo formato (nome em inglês + código da coleção) pra colar no TCG Live / Limitless.
 async function exportarDeck() {
@@ -502,7 +536,8 @@ async function exportarDeck() {
     catch { offline = true; delete setsInfo[setId]; }
     secoes[Math.min(ordem(c), 2)][1].push(`${n} ${nome} ${cod} ${/^\d+$/.test(c.num) ? +c.num : c.num}`);
   }
-  secoes[2][1].push(...(d.energiaTxt?.length ? d.energiaTxt : d.energia ? [`${d.energia} Basic Energy`] : []));
+  for (const [t, n] of Object.entries(d.energias || {}))
+    secoes[2][1].push(t === "?" ? `${n} Basic Energy` : `${n} Basic {${t}} Energy SVE ${ENERGIAS[t][2]}`);
   const txt = secoes.filter(([, l]) => l.length)
     .map(([t, l]) => `${t}: ${l.reduce((s, x) => s + parseInt(x, 10), 0)}\n${l.join("\n")}`).join("\n\n");
   navigator.clipboard.writeText(txt).then(() => toast(offline ? "Lista copiada (sem internet: nomes em português)" : "Lista copiada — é só colar no TCG Live"), () => prompt("Copie a lista:", txt));

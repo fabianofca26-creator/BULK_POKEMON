@@ -79,7 +79,7 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .seg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
 .seg .btn{padding:10px 4px;font-size:14px;width:100%!important;margin:0!important}
 @media (max-width:620px){ .seg{grid-template-columns:repeat(3,1fr)} }
-.pi{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.pi{display:grid;grid-template-columns:1fr 110px auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
 .pi input{padding:8px 9px;font-size:14px}
 .cp .cpinfo{grid-column:2/4;font-size:12px}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
@@ -1220,6 +1220,20 @@ function excluirPedido(num) {
   delete D.pedidos[num];
   salvar(); $("dlgPed").close(); render(); toast(`Pedido #${num} excluído`);
 }
+// Tira cartas do pedido (veio errado, cancelaram…): as cópias saem do "a caminho" ou do estoque e o frete é redividido.
+function tirarDoPedido(num, k, tudo) {
+  const ped = D.pedidos[num], it = ped.itens[k], q = tudo ? it.n : 1;
+  if (!confirm(`Tirar ${q}× ${nomeItem(it)} do pedido #${num}?${it.id && !it.energia && !it.dono ? " Sai do seu estoque (ou do a caminho)." : ""}`)) return;
+  if (it.id && !it.energia && !it.dono) {
+    let falta = q;
+    for (const e of D.caminho || []) if (falta && e.ped === num && e.it === k) { const t = Math.min(falta, e.n); e.n -= t; falta -= t; }
+    D.caminho = (D.caminho || []).filter(e => e.n > 0);
+    const c = D.cards[it.id], l = copias(c);
+    for (let i = l.length - 1; i >= 0 && falta; i--) if (l[i].ped === num && l[i].it === k) { l.splice(i, 1); c.qty--; falta--; }
+  }
+  it.n -= q;
+  ratear(num); salvar(); abrirPed(num);
+}
 function chegouPedido(num) {
   const es = (D.caminho || []).filter(e => e.ped === num);
   if (!confirm(`Marcar as ${es.reduce((s, e) => s + e.n, 0)} cartas do pedido #${num} como chegadas?`)) return;
@@ -1228,7 +1242,7 @@ function chegouPedido(num) {
 }
 function contasPedido(ped) {
   const P = {};
-  ped.itens.forEach((it, k) => { const p = P[it.dono || ""] ??= { n: 0, cartas: 0, frete: 0 }; p.n += it.n; p.cartas += it.n * it.preco; p.frete += freteDoItem(ped, k); });
+  ped.itens.forEach((it, k) => { if (!it.n) return; const p = P[it.dono || ""] ??= { n: 0, cartas: 0, frete: 0 }; p.n += it.n; p.cartas += it.n * it.preco; p.frete += freteDoItem(ped, k); });
   return P;
 }
 // nome do item: o do cadastro da carta (o do PDF vem repetido em português e inglês)
@@ -1264,13 +1278,14 @@ function abrirPed(num) {
     ${Object.entries(P).sort(([a], [b]) => a.localeCompare(b)).map(([d, p]) => `<div class="row" style="margin-bottom:8px"><div><b>${d ? esc(d) : "Você"}</b>
       <div class="sub">${p.n} carta${p.n > 1 ? "s" : ""} ${brl(p.cartas)} + frete ${brl(p.frete)} = <b>${brl(p.cartas + p.frete)}</b></div></div>
       ${d ? `<button class="btn sec" style="flex:none;width:auto;padding:8px 12px;font-size:13px" data-d="${esc(d)}" onclick="copiarCobranca('${num}',this.dataset.d)">Copiar cobrança</button>` : ""}</div>`).join("")}
-    <div class="grp">Itens (${ped.itens.length}) · de quem é cada um</div>
+    <div class="grp">Itens (${ped.itens.filter(i => i.n).length}) · de quem é cada um</div>
     <p class="muted" style="margin-top:-4px">Deixe em branco o que é seu. Escrevendo o nome de outra pessoa, o item sai do seu estoque.</p>
     <input placeholder="Filtrar itens…" style="margin-bottom:8px" oninput="const q=norm(this.value);document.querySelectorAll('#dlgPed .pi').forEach(e=>e.classList.toggle('hide',!e.dataset.t.includes(q)))">
-    ${ped.itens.map((it, k) => `<div class="pi" data-t="${esc(norm(it.nome + " " + (it.cod || "") + " " + (it.num || "")))}"><div>
+    ${ped.itens.map((it, k) => !it.n ? "" : `<div class="pi" data-t="${esc(norm(it.nome + " " + (it.cod || "") + " " + (it.num || "")))}"><div>
         <b>${it.n}×</b> ${esc(nomeItem(it))}
         <div class="sub muted">${brl(it.preco)} cada${it.v ? " · " + esc(it.v) : ""}${it.energia ? " · energia básica" : !it.id ? " · fora do estoque" : ""}</div></div>
-      <input list="pessoas" placeholder="Você" value="${esc(it.dono || "")}" onchange="mudarDono('${num}',${k},this.value)"></div>`).join("")}
+      <input list="pessoas" placeholder="Você" value="${esc(it.dono || "")}" onchange="mudarDono('${num}',${k},this.value)">
+      <div class="qt"><button title="Tirar 1 do pedido" aria-label="Tirar 1 do pedido" onclick="tirarDoPedido('${num}',${k},false)">−</button><button title="Tirar do pedido" aria-label="Tirar do pedido" onclick="tirarDoPedido('${num}',${k},true)">${ic("fechar")}</button></div></div>`).join("")}
     ${(D.caminho || []).some(e => e.ped === num) ? `<button class="btn" style="margin-top:12px" onclick="chegouPedido('${num}')">${ic("ok")} Chegou o pedido</button>` : ""}
     ${chegouAlgo(num) ? "" : `<button class="btn del" style="margin-top:12px" onclick="excluirPedido('${num}')">Excluir pedido</button>`}
     <button class="btn sec" style="margin-top:12px" onclick="dlgPed.close();render()">Fechar</button>`;

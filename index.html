@@ -130,7 +130,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
   #tela .btn{width:auto;padding:11px 22px;margin-right:8px}
   #tela .row{justify-content:flex-start}
   #tela .row>.btn{flex:none}
-  #dlgBusca,#dlgSet{width:min(94vw,960px)}
+  #dlgBusca,#dlgSet,#dlgPedido{width:min(94vw,960px)}
   #toast{bottom:24px;margin-left:105px}
 }
 </style>
@@ -170,6 +170,14 @@ dialog h2{font-size:17px;margin-bottom:12px}
 </dialog>
 
 <dialog id="dlgCarta"></dialog>
+
+<dialog id="dlgPedido">
+  <h2>Importar pedidos da MYP Cards</h2>
+  <p class="muted">Na MYP, abra o pedido e salve a página em PDF (imprimir → salvar como PDF). Pode escolher vários PDFs de uma vez. Antes de cadastrar, você vê o resumo de cada pedido e escolhe se já chegou.</p>
+  <input type="file" id="fPedido" accept="application/pdf,.pdf" multiple onchange="lerPedidos([...this.files])">
+  <div id="pedidoRes" style="margin-top:12px"></div>
+  <div class="row" style="margin-top:12px"><button class="btn sec" onclick="dlgPedido.close()">Fechar</button><button class="btn hide" id="pedidoOk" onclick="aplicarPedidos()">Cadastrar</button></div>
+</dialog>
 
 <dialog id="dlgSet">
   <h2>Cadastrar por coleção</h2>
@@ -237,6 +245,7 @@ const ICONES = {
   imprimir: "M7 9V3h10v6M7 17H4v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6h-3M7 14h10v7H7z",
   trocar: "M4 9h15l-3-3M20 15H5l3 3",
   ok: "M5 12.5l4.5 4.5L19 7.5",
+  importar: "M12 3v12M7 10l5 5 5-5M4 17v3h16v-3",
   caminhao: "M2 6h12v10H2zM14 9h4.5L22 12.5V16h-8" + circ(6, 18, 1.8) + circ(17, 18, 1.8),
   subir: "M12 19V5M6 11l6-6 6 6",
   descer: "M12 5v14M6 13l6 6 6-6",
@@ -412,7 +421,7 @@ function telaEmp() {
 // ---------- base TCGdex ----------
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
 let setsCache = {};
-async function sets(lang) { return setsCache[lang] ??= getJSON(`${API}/${lang}/sets`).then(l => Object.fromEntries(l.map((s, i) => [s.id, { name: s.name, i }]))); }
+async function sets(lang) { return setsCache[lang] ??= getJSON(`${API}/${lang}/sets`).then(l => Object.fromEntries(l.map((s, i) => [s.id, { name: s.name, i, official: s.cardCount?.official }]))); }
 // Garante a carta no cadastro; nome em português quando a base tem, senão inglês.
 // A base em português às vezes está incompleta (ex.: Celebração de 30 Anos tinha 2 de 128 cartas).
 // Junta as duas: cada carta em português quando existe, senão em inglês; ordem da lista em inglês.
@@ -560,6 +569,7 @@ function telaEstoque() {
     <div class="row" style="margin-bottom:12px">
       <button class="btn" onclick="abrirBusca('estoque')">＋ Cadastrar carta</button>
       <button class="btn sec" onclick="abrirPorColecao()">${ic("colecao")} Por coleção</button></div>
+    <button class="btn sec" style="margin:-4px 0 12px" onclick="abrirImportar()">${ic("importar")} Importar pedidos da MYP Cards</button>
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
@@ -979,17 +989,31 @@ async function salvarDeck() {
 }
 
 // Lista no formato do TCG Live / Limitless: "4 Arven SVI 166"
-const APELIDO = { "PR-SV": "SVP", "PR-ME": "MEP", "PR-SW": "SWSHP" };
+// SV1/SV2 são os códigos que a MYP Cards usa pras duas primeiras coleções de Escarlate e Violeta
+const APELIDO = { "PR-SV": "SVP", "PR-ME": "MEP", "PR-SW": "SWSHP", SV1: "SVI", SV2: "PAL" };
 const BASICA = /^(basic\s+)?(\{.\}|grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy)\s+energy$/i;
 const setPorCodigo = {}, setsInfo = {};
 const infoSet = setId => setsInfo[setId] ??= getJSON(`${API}/en/sets/${encodeURIComponent(setId)}`);
-async function idDaCarta(cod, num) {
+// Um código pode ter mais de uma coleção (ex.: 30C = Celebração + Coleção Clássica; BRS + Trainer Gallery): procura o número em todas.
+// Prize Pack (PPS) não tem coleção própria: busca pelo nome em inglês (última palavra, ex.: "Gabite") + número original;
+// se o nome traz "103/182", fica com a coleção de 182 cartas; senão, com a mais nova.
+async function idDaCarta(cod, num, nome = "") {
   cod = APELIDO[cod.toUpperCase()] || cod.toUpperCase();
-  const setId = await (setPorCodigo[cod] ??= getJSON(`${API}/en/sets?abbreviation.official=${encodeURIComponent(cod)}`).then(l => l[0]?.id));
-  if (!setId) return null;
-  const cartas = (await infoSet(setId)).cards;
-  const c = cartas.find(c => c.localId.toUpperCase() === num.toUpperCase()) || cartas.find(c => parseInt(c.localId, 10) === parseInt(num, 10));
-  return c?.id || null;
+  if (cod === "PPS") {
+    const m = nome.match(/(\d+)\/(\d+)/), palavra = nome.split(" - ")[0].trim().split(" ").pop(), S = await sets("en");
+    if (m) num = m[1];
+    const setDe = id => id.slice(0, id.lastIndexOf("-"));
+    const l = await getJSON(`${API}/en/cards?name=${encodeURIComponent(palavra)}&localId=${encodeURIComponent(num)}`).catch(() => []);
+    return l.sort((a, b) => (m ? (S[setDe(b.id)]?.official === +m[2]) - (S[setDe(a.id)]?.official === +m[2]) : 0)
+      || (S[setDe(b.id)]?.i ?? -1) - (S[setDe(a.id)]?.i ?? -1))[0]?.id || null;
+  }
+  const ids = await (setPorCodigo[cod] ??= getJSON(`${API}/en/sets?abbreviation.official=${encodeURIComponent(cod)}`).then(l => l.map(s => s.id)));
+  for (const setId of ids) {
+    const cartas = (await infoSet(setId)).cards;
+    const c = cartas.find(c => c.localId.toUpperCase() === num.toUpperCase()) || cartas.find(c => parseInt(c.localId, 10) === parseInt(num, 10));
+    if (c) return c.id;
+  }
+  return null;
 }
 async function lerLista(txt) {
   const list = {}, falhas = [], energias = {};
@@ -1025,6 +1049,112 @@ async function exportarDeck() {
   navigator.clipboard.writeText(txt).then(() => toast(offline ? "Lista copiada (sem internet: nomes em português)" : "Lista copiada — é só colar no TCG Live"), () => prompt("Copie a lista:", txt));
 }
 
+// ---------- importar pedidos da MYP Cards (PDF da página do pedido) ----------
+// O leitor de PDF (pdf.js) só é baixado quando você usa a importação.
+async function carregarPdfjs() {
+  if (!window.pdfjsLib) await new Promise((ok, erro) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = ok; s.onerror = () => erro(new Error("não deu pra baixar o leitor de PDF (sem internet?)"));
+    document.head.appendChild(s);
+  });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  return pdfjsLib;
+}
+async function textoDoPdf(arquivo) {
+  const doc = await (await carregarPdfjs()).getDocument({ data: await arquivo.arrayBuffer() }).promise;
+  let t = "";
+  for (let i = 1; i <= doc.numPages; i++)
+    t += (await (await doc.getPage(i)).getTextContent()).items.map(x => x.str + (x.hasEOL ? "\n" : " ")).join("") + "\n";
+  return t;
+}
+// No texto do PDF cada "N x" fecha um item (a carta, com o código pokemon_<coleção>_<número>, vem antes);
+// os preços aparecem em sequência à parte, na mesma ordem dos itens.
+function lerPedidoMyp(t) {
+  const ped = t.match(/Pedido #(\d+)\s*-\s*(\d\d)\/(\d\d)\/(\d{4})/);
+  if (!ped) throw new Error("não parece um pedido da MYP Cards");
+  const corpo = t.slice(t.indexOf("Itens"));
+  const precos = [...corpo.matchAll(/R\$\s*([\d.]+,\d\d)/g)].map(m => +m[1].replace(/\./g, "").replace(",", "."));
+  const resto = corpo.replace(/R\$\s*[\d.]+,\d\d/g, " ").replace(/Pedido #\d+\s*-\s*[\d/]+/g, " ").replace(/^Itens(\s+Padrão)?/, " ");
+  const itens = [];
+  for (const m of resto.matchAll(/([\s\S]*?)(\d+)\s+x(?=\s|$)/g)) {
+    const txt = m[1].replace(/\s+/g, " ").trim(), cod = txt.match(/pokemon_([a-z0-9]+)_([a-z0-9]+)(?:\/\w+)?/i);
+    itens.push(cod ? { cod: cod[1].toUpperCase(), num: cod[2], nome: txt.slice(0, cod.index).trim(), cond: txt.slice(cod.index + cod[0].length).trim(), n: +m[2] }
+      : { produto: txt.replace(/^Padrão\s*/, ""), n: +m[2] });
+  }
+  if (itens.length !== precos.length) throw new Error(`pedido ${ped[1]}: achei ${itens.length} itens e ${precos.length} preços — o PDF veio diferente do esperado`);
+  itens.forEach((it, i) => it.preco = precos[i]);
+  return { pedido: ped[1], data: `${ped[4]}-${ped[3]}-${ped[2]}`, itens };
+}
+// versão da cópia a partir do que a MYP escreve ("Reverse Foil · NM - Quase nova", "Foil", "Master Ball"…)
+const versaoMyp = cond => /master ball/i.test(cond) ? "Reverse Master Ball" : /pok[eé] ?ball/i.test(cond) ? "Reverse Poké Ball"
+  : /reverse|energy symbol/i.test(cond) ? "Reverse" : /foil/i.test(cond) ? "Holo" : /promo/i.test(cond) ? "Promo" : /ball/i.test(cond) ? "Outra" : "";
+async function emLotes(lista, fn, n = 8) {
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => { while (i < lista.length) { const k = i++; await fn(lista[k], k); } }));
+}
+let pedidosLidos = [];
+async function lerPedidos(arquivos) {
+  const msg = t => $("pedidoRes").innerHTML = `<p class="muted">${t}</p>`;
+  $("pedidoOk").classList.add("hide"); pedidosLidos = [];
+  try {
+    msg("Lendo os PDFs…");
+    for (const a of arquivos) {
+      try { pedidosLidos.push(lerPedidoMyp(await textoDoPdf(a))); }
+      catch (e) { pedidosLidos.push({ erro: `${a.name}: ${e.message}` }); }
+    }
+    const itens = pedidosLidos.flatMap(p => p.itens || []).filter(i => i.cod && !/^(SVE|MEE|SVEN)$/.test(i.cod));
+    let feitos = 0;
+    await emLotes(itens, async it => {
+      it.id = await idDaCarta(it.cod, it.num, it.nome).catch(() => null);
+      if (it.id) await garantir(it.id).catch(() => it.id = null);
+      if (++feitos % 20 === 0) msg(`Encontrando as cartas na base… ${feitos} de ${itens.length}`);
+    });
+    mostrarPedidos();
+  } catch (e) { msg("Não deu: " + esc(e.message)); }
+}
+function mostrarPedidos() {
+  const ok = pedidosLidos.filter(p => !p.erro);
+  $("pedidoRes").innerHTML = pedidosLidos.filter(p => p.erro).map(p => `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">${esc(p.erro)}</div>`).join("") + ok.sort((a, b) => a.data.localeCompare(b.data)).map(p => {
+    const cartas = p.itens.filter(i => i.id), copias = cartas.reduce((s, i) => s + i.n, 0), valor = cartas.reduce((s, i) => s + i.n * i.preco, 0);
+    const energia = p.itens.filter(i => /^(SVE|MEE|SVEN)$/.test(i.cod || "")).reduce((s, i) => s + i.n, 0);
+    const naoAchei = p.itens.filter(i => i.cod && !i.id && !/^(SVE|MEE|SVEN)$/.test(i.cod)), produtos = p.itens.filter(i => i.produto);
+    const ja = D.pedidos?.[p.pedido];
+    return `<div class="card"><div class="slh"><b>#${p.pedido}</b><span class="muted">${p.data.split("-").reverse().join("/")} · ${copias} carta${copias === 1 ? "" : "s"} · ${brl(valor)}</span></div>
+      ${ja ? `<p class="sub" style="color:var(--wa-tx)">Já importado em ${ja.split("-").reverse().join("/")}.</p>` : ""}
+      <select data-p="${p.pedido}" style="margin:8px 0 4px">
+        <option value="chegou"${ja ? "" : " selected"}>Já chegou — vai pro estoque</option>
+        <option value="caminho">Ainda não chegou — vai pra "a caminho"</option>
+        <option value="pular"${ja ? " selected" : ""}>Não importar</option></select>
+      ${energia ? `<p class="sub muted">${energia} energia${energia > 1 ? "s" : ""} básica${energia > 1 ? "s" : ""} fica${energia > 1 ? "m" : ""} de fora (não entram no estoque).</p>` : ""}
+      ${produtos.length ? `<p class="sub muted">Fora do estoque (não é carta avulsa): ${produtos.map(i => esc(`${i.n}x ${i.produto}`)).join("; ")}.</p>` : ""}
+      ${naoAchei.length ? `<p class="sub" style="color:var(--er-tx)">Não achei na base: ${naoAchei.map(i => esc(`${i.n}x ${i.nome} (${i.cod} ${i.num})`)).join("; ")}.</p>` : ""}</div>`;
+  }).join("");
+  $("pedidoOk").classList.toggle("hide", !ok.length);
+}
+function aplicarPedidos() {
+  let est = 0, cam = 0;
+  for (const p of pedidosLidos.filter(p => !p.erro)) {
+    const destino = document.querySelector(`#pedidoRes select[data-p="${p.pedido}"]`).value;
+    if (destino === "pular") continue;
+    for (const it of p.itens.filter(i => i.id)) {
+      const c = D.cards[it.id], v = versaoMyp(it.cond);
+      if (destino === "chegou") {
+        copias(c).push(...Array.from({ length: it.n }, () => ({ pago: it.preco, ...(v && { v }) }))); c.qty += it.n; est += it.n;
+      } else {
+        (D.caminho ??= []).push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), card: it.id, n: it.n, de: "MYP #" + p.pedido, pago: it.preco, ...(v && { v }), data: p.data }); cam += it.n;
+      }
+    }
+    (D.pedidos ??= {})[p.pedido] = new Date().toISOString().slice(0, 10);
+  }
+  salvar(); $("dlgPedido").close(); render();
+  toast(`${est ? est + " cartas no estoque" : ""}${est && cam ? " · " : ""}${cam ? cam + " a caminho" : ""}` || "Nada importado");
+}
+function abrirImportar() {
+  $("pedidoRes").innerHTML = ""; $("fPedido").value = ""; $("pedidoOk").classList.add("hide");
+  $("dlgPedido").showModal();
+}
+
 // ---------- compras ----------
 const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - c.qty - somaCaminho(id) })).filter(x => x.n > 0)
   .sort((a, b) => a.c.name.localeCompare(b.c.name));
@@ -1055,7 +1185,7 @@ function comprei(id, sugestao = 1) {
 // chegou: entra no estoque e as cópias novas já vêm com o valor pago anotado
 function chegou(eid) {
   const e = D.caminho.find(x => x.id === eid), c = D.cards[e.card];
-  copias(c).push(...Array.from({ length: e.n }, () => e.pago ? { pago: e.pago } : {})); c.qty += e.n;
+  copias(c).push(...Array.from({ length: e.n }, () => ({ ...(e.pago && { pago: e.pago }), ...(e.v && { v: e.v }) }))); c.qty += e.n;
   D.caminho = D.caminho.filter(x => x !== e); salvar(); render();
   toast(`${e.n}× ${c.name} no estoque (agora ${c.qty})`);
 }

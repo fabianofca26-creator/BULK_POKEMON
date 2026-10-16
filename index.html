@@ -7,6 +7,7 @@
 <title>Estoque Pokémon</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
   --bg:#f4f5f7; --card:#fff; --line:#e3e5ea; --line2:#cfd3db;
@@ -73,6 +74,15 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .res .tag{margin:2px 1px 0}
 .en{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
 .ebtn{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;font-size:14px;flex:none}
+.tenho{border:1px solid var(--ok-tx);background:var(--ok-bg);color:var(--ok-tx);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;cursor:pointer;margin-top:3px}
+.navc{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.navc button{width:44px;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--card);font-size:20px;cursor:pointer;flex:none}
+.navc span{flex:1;text-align:center;font-size:13px;color:var(--tx3)}
+.dot{display:inline-block;width:14px;height:14px;border-radius:50%;flex:none;vertical-align:-2px}
+.slh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dk{padding:9px 0 2px;margin-top:8px;border-top:1px solid var(--line);cursor:pointer}
+.res .menos{position:absolute;top:4px;left:4px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:18px;cursor:pointer}
+.nv-off{opacity:.45} .nv-sync{color:var(--ok-tx)} .nv-err{color:var(--er-tx)} .nv-busy{color:var(--wa-tx)}
 .grp{font-size:12px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px}
 nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
 nav button{flex:1;background:none;border:0;padding:10px 0 12px;font-size:12px;color:var(--tx3);cursor:pointer}
@@ -98,7 +108,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
   #tela .btn{width:auto;padding:11px 22px;margin-right:8px}
   #tela .row{justify-content:flex-start}
   #tela .row>.btn{flex:none}
-  #dlgBusca{width:min(94vw,960px)}
+  #dlgBusca,#dlgSet{width:min(94vw,960px)}
   #toast{bottom:24px;margin-left:105px}
 }
 </style>
@@ -108,8 +118,10 @@ dialog h2{font-size:17px;margin-bottom:12px}
   <header>
     <div class="t"><h1 id="titulo">Estoque</h1><p id="sub"></p></div>
     <button class="icobtn" id="btnVista" onclick="D.vista = D.vista === 'grade' ? 'lista' : 'grade'; salvar(); render()" aria-label="Trocar visualização"></button>
+    <button class="icobtn nv-off" id="btnNuvem" onclick="D.driveCid ? sincronizar(true) : abrirAjustes()" aria-label="Google Drive">☁</button>
     <button class="icobtn" onclick="abrirAjustes()" aria-label="Ajustes">⚙</button>
   </header>
+  <div id="avisoNuvem" class="card hide" style="cursor:pointer;background:var(--wa-bg);color:var(--wa-tx)" onclick="sincronizar(true)">☁ Toque aqui pra sincronizar com o Drive antes de mexer — assim você pega o que mudou no outro aparelho.</div>
   <main id="tela"></main>
 </div>
 
@@ -117,7 +129,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
   <button data-a="estoque" onclick="ir('estoque')"><span>🗃</span>Estoque</button>
   <button data-a="decks" onclick="ir('decks')"><span>🃏</span>Decks</button>
   <button data-a="emp" onclick="ir('emp')"><span>🤝</span>Empréstimos</button>
-  <button data-a="compras" onclick="ir('compras')"><span>🛒</span>Comprar</button>
+  <button data-a="compras" onclick="ir('compras')"><span>🛒</span>Listas</button>
 </nav>
 
 <!-- busca na base TCGdex (precisa de internet) -->
@@ -136,10 +148,21 @@ dialog h2{font-size:17px;margin-bottom:12px}
 
 <dialog id="dlgCarta"></dialog>
 
+<dialog id="dlgSet">
+  <h2>Cadastrar por coleção</h2>
+  <select id="setSel" onchange="carregarSet(this.value)"></select>
+  <p class="muted" id="setMsg">Escolha a coleção. Toque na carta pra somar +1, no − pra tirar.</p>
+  <div class="grid" id="setRes"></div>
+  <button class="btn sec" style="margin-top:12px" onclick="dlgSet.close();render()">Fechar</button>
+</dialog>
+
 <dialog id="dlgDeck">
   <h2 id="deckFormTit">Novo deck</h2>
   <div class="field"><label>Nome</label><input id="dNome"></div>
-  <div class="field"><label>Sleeve (decks no mesmo sleeve dividem as cartas)</label><input id="dSleeve" list="sleeves" placeholder="ex.: Sleeve vermelho"><datalist id="sleeves"></datalist></div>
+  <div class="field"><label>Sleeve e cor (decks no mesmo sleeve dividem as cartas)</label>
+    <div class="row"><input id="dSleeve" list="sleeves" placeholder="ex.: Sleeve vermelho" oninput="corDoSleeve()"><input type="color" id="dCor" style="flex:none;width:52px;height:46px;padding:3px"></div>
+    <datalist id="sleeves"></datalist></div>
+  <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--tx);margin-bottom:12px"><input type="checkbox" id="dRasc" style="width:auto"> Rascunho — só estou planejando, não ocupa cartas do estoque</label>
   <div class="field"><label>Colar lista (opcional, formato TCG Live / Limitless)</label><textarea id="dLista" placeholder="4 Dreepy TWM 128&#10;4 Arven SVI 166&#10;..."></textarea></div>
   <p class="muted" id="deckMsg"></p>
   <div class="row"><button class="btn sec" onclick="dlgDeck.close()">Cancelar</button><button class="btn" id="deckOk" onclick="salvarDeck()">Salvar</button></div>
@@ -149,7 +172,12 @@ dialog h2{font-size:17px;margin-bottom:12px}
   <h2>Ajustes</h2>
   <div class="field"><label>Marcas de regulação válidas no Standard</label><input id="aMarcas"></div>
   <p class="muted">A letra fica no canto de baixo da carta. Quando houver rotação (todo ano, por volta de abril), tire a letra mais antiga daqui.</p>
+  <div class="field"><label>Cópias que você guarda de cada carta do Standard (o resto vai pra lista de troca)</label><input id="aGuardar" type="number" min="0" inputmode="numeric"></div>
   <button class="btn" onclick="salvarAjustes()">Salvar</button>
+  <div class="grp">Google Drive</div>
+  <div class="field"><label>Client ID (o mesmo do app de Assistência)</label><input id="aCid" placeholder="123456-abc.apps.googleusercontent.com" style="font-size:13px"></div>
+  <p class="muted" id="nuvemInfo"></p>
+  <button class="btn sec" onclick="salvarAjustes(true)">Conectar e sincronizar</button>
   <div class="grp">Backup</div>
   <p class="muted" id="bkInfo"></p>
   <div class="row">
@@ -186,8 +214,9 @@ for (const d of D.decks) if (!d.energias) {
   delete d.energia; delete d.energiaTxt;
 }
 let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", modoBusca = null, trocaDe = null;
+let vistos = []; // ordem das cartas na tela atual, pras setas da janela da carta
 
-const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
+const salvar = () => { D.salvoEm = new Date().toISOString(); localStorage.setItem(KEY, JSON.stringify(D)); agendarSync(); };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -202,10 +231,13 @@ function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on
 
 // ---------- uso das cartas ----------
 // Decks no mesmo sleeve dividem cartas: dentro do grupo conta o MAIOR uso, entre grupos SOMA.
-const grupo = d => d.sleeve.trim().toLowerCase() || "#" + d.id;
+// Rascunho não ocupa carta nenhuma: fica fora do cálculo e conta como grupo próprio.
+const grupo = d => d.rascunho ? "#r" + d.id : d.sleeve.trim().toLowerCase() || "#" + d.id;
+const PALETA = ["#d33b3b", "#2a7de1", "#2e9e4f", "#e0a21b", "#8e44ad", "#e67e22", "#16a085", "#555b66"];
+const corSleeve = nome => D.sleeves?.[nome.trim().toLowerCase()] || "#8b929d";
 function calcUso() {
   const U = {};
-  for (const d of D.decks) for (const [id, n] of Object.entries(d.list)) {
+  for (const d of D.decks.filter(d => !d.rascunho)) for (const [id, n] of Object.entries(d.list)) {
     const u = ((U[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
     u.n = Math.max(u.n, n); u.decks.push(d.name);
   }
@@ -239,6 +271,7 @@ function devolver(eid) {
 function telaEmp() {
   const porPessoa = {};
   for (const e of D.emp) (porPessoa[e.pessoa] ??= []).push(e);
+  vistos = [...new Set(Object.keys(porPessoa).sort().flatMap(p => porPessoa[p].map(e => e.card)))];
   $("titulo").textContent = "Empréstimos";
   $("sub").textContent = D.emp.length ? `${Object.keys(porPessoa).length} pessoa${Object.keys(porPessoa).length > 1 ? "s" : ""}` : "nada emprestado";
   $("tela").innerHTML = `<div class="row" style="margin-bottom:6px">
@@ -258,10 +291,104 @@ async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new E
 let setsCache = {};
 async function sets(lang) { return setsCache[lang] ??= getJSON(`${API}/${lang}/sets`).then(l => Object.fromEntries(l.map((s, i) => [s.id, { name: s.name, i }]))); }
 // Garante a carta no cadastro; nome em português quando a base tem, senão inglês.
+// Toques rápidos na mesma carta nova esperam a mesma busca, senão um apagava o outro.
+const buscando = {};
 async function garantir(id) {
   if (D.cards[id]) return D.cards[id];
-  const c = await getJSON(`${API}/pt/cards/${encodeURIComponent(id)}`).catch(() => getJSON(`${API}/en/cards/${encodeURIComponent(id)}`));
-  return D.cards[id] = { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", img: c.image || "", qty: 0 };
+  const c = await (buscando[id] ??= getJSON(`${API}/pt/cards/${encodeURIComponent(id)}`).catch(() => getJSON(`${API}/en/cards/${encodeURIComponent(id)}`)).finally(() => delete buscando[id]));
+  return D.cards[id] ??= { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", img: c.image || "", qty: 0 };
+}
+
+// ---------- Google Drive ----------
+// ponytail: última versão ganha, sem mesclar registro a registro (usuário único). Se mexer
+// nos dois aparelhos sem sincronizar no meio, a versão mais antiga se perde — por isso o
+// aviso pra sincronizar ao abrir e a sincronização 3 s depois de cada alteração.
+const DRIVE = { estado: "off", erro: "", quando: "", timer: null };
+function tokenValido() {
+  try { const t = JSON.parse(localStorage.getItem("pkst_tok") || "null"); return t && t.exp > Date.now() + 60000 ? t.tok : null; } catch { return null; }
+}
+function conectar() {
+  return new Promise((res, rej) => {
+    if (!D.driveCid) return rej(new Error("cole o Client ID nos ajustes"));
+    if (!window.google?.accounts) return rej(new Error("a biblioteca do Google não carregou (sem internet?)"));
+    google.accounts.oauth2.initTokenClient({
+      client_id: D.driveCid, scope: "https://www.googleapis.com/auth/drive.file",
+      callback: r => {
+        if (r.error) return rej(new Error(r.error));
+        localStorage.setItem("pkst_tok", JSON.stringify({ tok: r.access_token, exp: Date.now() + r.expires_in * 1000 }));
+        res();
+      },
+      error_callback: e => rej(new Error(e.type === "popup_closed" ? "janela fechada" : e.type || "erro"))
+    }).requestAccessToken({ prompt: "" });
+  });
+}
+async function dapi(path, opts = {}, upload = false) {
+  const tok = tokenValido(); if (!tok) throw new Error("não conectado");
+  const r = await fetch(`https://www.googleapis.com/${upload ? "upload/" : ""}drive/v3/${path}`,
+    { ...opts, headers: { Authorization: "Bearer " + tok, ...(opts.headers || {}) } });
+  if (r.status === 401) { localStorage.removeItem("pkst_tok"); throw new Error("sessão expirou, conecte de novo"); }
+  if (!r.ok) { let m = ""; try { m = (await r.json()).error.message; } catch { } throw new Error(`Drive respondeu ${r.status}${m ? ": " + m : ""}`); }
+  return r;
+}
+async function dBuscar(nome, pasta) {
+  const q = `name='${nome}' and trashed=false` + (pasta ? ` and '${pasta}' in parents` : "");
+  return (await (await dapi("files?q=" + encodeURIComponent(q) + "&fields=files(id)")).json()).files[0] || null;
+}
+async function dCriar(nome, pasta, blob) {
+  const meta = { name: nome, parents: pasta ? [pasta] : [] };
+  if (!blob) {
+    meta.mimeType = "application/vnd.google-apps.folder";
+    return (await (await dapi("files?fields=id", { method: "POST", body: JSON.stringify(meta), headers: { "Content-Type": "application/json" } })).json()).id;
+  }
+  const fd = new FormData();
+  fd.append("metadata", new Blob([JSON.stringify(meta)], { type: "application/json" }));
+  fd.append("file", blob);
+  return (await (await dapi("files?uploadType=multipart&fields=id", { method: "POST", body: fd }, true)).json()).id;
+}
+function nuvem() {
+  const b = $("btnNuvem");
+  b.className = "icobtn nv-" + DRIVE.estado;
+  b.title = { off: "Google Drive: desconectado", sync: "Sincronizado às " + DRIVE.quando, busy: "Sincronizando…", err: "Erro: " + DRIVE.erro }[DRIVE.estado];
+  $("avisoNuvem").classList.toggle("hide", !(D.driveOn && !tokenValido() && DRIVE.estado !== "busy"));
+  if ($("dlgAjustes").open) $("nuvemInfo").textContent = "Estado: " + ({ off: D.driveOn ? "desconectado (toque em conectar)" : "nunca conectado", sync: "sincronizado às " + DRIVE.quando, busy: "sincronizando…", err: "erro — " + DRIVE.erro }[DRIVE.estado]) + ". Os dados ficam no arquivo estoque-pokemon.json, numa pasta \"Estoque Pokémon\" do seu Drive.";
+}
+async function sincronizar(interativo) {
+  if (DRIVE.estado === "busy") return;
+  let mudou = false;
+  try {
+    if (!tokenValido()) { if (!interativo) return; await conectar(); }
+    DRIVE.estado = "busy"; nuvem();
+    const pasta = (await dBuscar("Estoque Pokémon"))?.id || await dCriar("Estoque Pokémon");
+    const arq = await dBuscar("estoque-pokemon.json", pasta);
+    let subir = !arq;
+    if (arq) {
+      const remoto = JSON.parse(await (await dapi(`files/${arq.id}?alt=media`)).text());
+      const rs = remoto.salvoEm || "", ls = D.salvoEm || "";
+      if (rs > ls) {
+        D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, remoto, { driveCid: remoto.driveCid || D.driveCid });
+        deckAberto = D.decks.find(d => d.id === deckAberto?.id) || null;
+        mudou = true;
+      } else if (ls > rs) subir = true;
+    }
+    D.driveOn = true;
+    localStorage.setItem(KEY, JSON.stringify(D));
+    if (subir) {
+      const blob = new Blob([JSON.stringify(D)], { type: "application/json" });
+      if (arq) await dapi(`files/${arq.id}?uploadType=media`, { method: "PATCH", body: blob, headers: { "Content-Type": "application/json" } }, true);
+      else await dCriar("estoque-pokemon.json", pasta, blob);
+    }
+    DRIVE.estado = "sync"; DRIVE.quando = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    DRIVE.estado = tokenValido() ? "err" : "off"; DRIVE.erro = e.message;
+    if (interativo) alert("Não sincronizou: " + e.message);
+  }
+  nuvem();
+  if (mudou) { render(); toast("Dados atualizados do Drive"); }
+}
+function agendarSync() {
+  if (!tokenValido()) return nuvem();
+  clearTimeout(DRIVE.timer);
+  DRIVE.timer = setTimeout(() => sincronizar(false), 3000);
 }
 
 // ---------- telas ----------
@@ -290,14 +417,17 @@ function linhaEstoque(id, c, U) {
 function telaEstoque() {
   const U = calcUso(), meus = Object.entries(D.cards).filter(([, c]) => c.qty > 0);
   $("titulo").textContent = "Estoque";
-  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes`;
+  const valor = meus.reduce((s, [, c]) => s + (c.preco || 0) * c.qty, 0);
+  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · " + brl(valor) : ""}`;
   $("tela").innerHTML = `
     <div class="row" style="margin-bottom:10px">
       <input id="filtro" placeholder="Já tenho essa carta? Busque aqui…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()">
       <select style="flex:none;width:auto" onchange="filtroRot=this.value;telaEstoqueLista()">
         ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
       </select></div>
-    <button class="btn" onclick="abrirBusca('estoque')" style="margin-bottom:12px">＋ Cadastrar carta</button>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn" onclick="abrirBusca('estoque')">＋ Cadastrar carta</button>
+      <button class="btn sec" onclick="abrirPorColecao()">📚 Por coleção</button></div>
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
@@ -305,6 +435,7 @@ function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
   const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)) && (!filtroRot || legal(c) === (filtroRot === "std")))
     .sort(([, a], [, b]) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
+  vistos = lista.map(([id]) => id);
   $("lista").innerHTML = lista.length ? blocos(lista.map(([id, c]) => linhaEstoque(id, c, U)))
     : `<p class="muted">${f || filtroRot ? "Nenhuma carta sua com esse filtro." : "Nenhuma carta cadastrada ainda."}</p>`;
 }
@@ -317,12 +448,19 @@ function mudaQtd(id, d) {
 
 function abrirCarta(id) {
   const c = D.cards[id], U = calcUso(), em = usado(U, id), noDeck = aba === "decks" && !!deckAberto?.list[id];
-  const usos = D.decks.filter(d => d.list[id]).map(d => `<div class="sub">• ${esc(d.name)}: ${d.list[id]}${d.sleeve ? ` <span class="muted">(${esc(d.sleeve)})</span>` : ""}</div>`).join("");
-  const dlg = $("dlgCarta");
-  dlg.innerHTML = `${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
+  const usos = D.decks.filter(d => d.list[id]).map(d => `<div class="sub" style="margin-bottom:3px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span> ${esc(d.name)}: ${d.list[id]}
+    <span class="muted">${d.rascunho ? "(rascunho)" : d.sleeve ? `(${esc(d.sleeve)})` : ""}</span></div>`).join("");
+  const dlg = $("dlgCarta"), pos = vistos.indexOf(id);
+  dlg.dataset.id = id;
+  dlg.innerHTML = `${pos >= 0 && vistos.length > 1 ? `<div class="navc"><button onclick="navCarta(-1)" aria-label="Carta anterior">‹</button>
+      <span>${pos + 1} de ${vistos.length}</span><button onclick="navCarta(1)" aria-label="Próxima carta">›</button></div>` : ""}
+    ${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
     <h2>${esc(c.name)}${regTag(c)}</h2>
     <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
     <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
+    <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
+      <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
+    <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Consulte na Liga e anote o preço aqui."}</p>
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
     ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">⇄ Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
     <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
@@ -330,6 +468,25 @@ function abrirCarta(id) {
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
   if (!dlg.open) dlg.showModal();
 }
+
+function navCarta(passo) {
+  const i = vistos.indexOf($("dlgCarta").dataset.id);
+  if (i < 0 || vistos.length < 2) return;
+  abrirCarta(vistos[(i + passo + vistos.length) % vistos.length]);
+  $("dlgCarta").scrollTop = 0;
+}
+// setas do teclado no computador, arrastar o dedo pro lado no celular
+document.addEventListener("keydown", e => {
+  if (!$("dlgCarta").open || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowLeft") navCarta(-1); else if (e.key === "ArrowRight") navCarta(1);
+});
+let toqueX = null;
+$("dlgCarta").addEventListener("touchstart", e => { toqueX = e.target.tagName === "INPUT" ? null : e.touches[0].clientX; }, { passive: true });
+$("dlgCarta").addEventListener("touchend", e => {
+  if (toqueX === null) return;
+  const dx = e.changedTouches[0].clientX - toqueX; toqueX = null;
+  if (Math.abs(dx) > 60) navCarta(dx < 0 ? 1 : -1);
+}, { passive: true });
 
 // ---------- reprint: mesma carta em outra coleção ----------
 function trocarColecao(id) {
@@ -350,6 +507,47 @@ function trocar(de, para) {
     toast(`${n}× movida${n > 1 ? "s" : ""} pra ${b.set}`);
   }
   salvar(); return true;
+}
+
+// ---------- cadastro por coleção: todas as cartas da coleção em ordem, toque = +1 ----------
+let setCartas = [];
+async function abrirPorColecao() {
+  $("dlgSet").showModal();
+  if ($("setSel").options.length) return;
+  $("setMsg").textContent = "Carregando coleções…";
+  try {
+    const [pt, en] = await Promise.all([sets("pt"), sets("en")]);
+    const ids = Object.keys(en).sort((a, b) => en[b].i - en[a].i);
+    $("setSel").innerHTML = `<option value="">Escolha a coleção…</option>` + ids.map(id => `<option value="${esc(id)}">${esc(pt[id]?.name || en[id].name)}</option>`).join("");
+    $("setMsg").textContent = "Escolha a coleção. Toque na carta pra somar +1, no − pra tirar.";
+    if (D.ultSet) { $("setSel").value = D.ultSet; carregarSet(D.ultSet); }
+  } catch { $("setMsg").textContent = "Sem conexão com a base de cartas."; }
+}
+async function carregarSet(id) {
+  if (!id) return;
+  $("setRes").innerHTML = ""; $("setMsg").textContent = "Carregando cartas…";
+  try {
+    const lang = (await sets("pt"))[id] ? "pt" : "en";
+    setCartas = (await getJSON(`${API}/${lang}/sets/${encodeURIComponent(id)}`)).cards;
+    D.ultSet = id; localStorage.setItem(KEY, JSON.stringify(D));
+    $("setMsg").textContent = `${setCartas.length} cartas. Toque pra somar +1, no − pra tirar.`;
+    $("setRes").innerHTML = setCartas.map(tileSet).join("");
+  } catch { $("setMsg").textContent = "Sem conexão com a base de cartas."; }
+}
+function tileSet(c) {
+  const q = D.cards[c.id]?.qty || 0;
+  return `<div class="res" data-c="${esc(c.id)}" onclick="somarSet('${esc(c.id)}',1)"><div class="tw" style="${q ? "" : "opacity:.55"}">
+    ${c.image ? `<img loading="lazy" src="${c.image}/low.webp" alt="">` : `<img alt="">`}
+    ${q ? `<span class="qb">${q}</span><button class="menos" onclick="event.stopPropagation();somarSet('${esc(c.id)}',-1)">−</button>` : ""}</div>
+    <span class="muted">${esc(c.localId)}</span> <b>${esc(c.name)}</b></div>`;
+}
+async function somarSet(id, n) {
+  try {
+    const c = await garantir(id);
+    c.qty = Math.max(0, c.qty + n); salvar();
+    const el = document.querySelector(`#setRes [data-c="${CSS.escape(id)}"]`);
+    if (el) el.outerHTML = tileSet(setCartas.find(x => x.id === id));
+  } catch { toast("Sem conexão — não deu pra buscar a carta."); }
 }
 
 // ---------- busca/cadastro ----------
@@ -401,14 +599,21 @@ async function escolher(id) {
 function telaDecks() {
   const U = calcUso();
   $("titulo").textContent = "Decks"; $("sub").textContent = `${D.decks.length} deck${D.decks.length === 1 ? "" : "s"}`;
-  const porSleeve = {};
-  for (const d of D.decks) (porSleeve[d.sleeve.trim() || "Sem sleeve"] ??= []).push(d);
-  $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:6px">＋ Novo deck</button>` +
-    Object.entries(porSleeve).sort().map(([s, ds]) => `<div class="grp">${esc(s)}</div><div class="lst">` + ds.map(d => {
-      const st = statusDeck(d, U);
-      return `<div class="card" style="cursor:pointer" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
-        <div class="sub muted">${st.total} cartas · ${st.falta ? `<span class="tag er">faltam ${st.falta}</span>` : `<span class="tag ok">completo</span>`}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
-    }).join("") + "</div>").join("") + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
+  // uma caixa por sleeve, com a cor dele; decks sem sleeve e rascunhos em caixas à parte
+  const sleeves = {}, soltos = [], rasc = [];
+  for (const d of D.decks) d.rascunho ? rasc.push(d) : d.sleeve.trim() ? (sleeves[d.sleeve.trim().toLowerCase()] ??= { nome: d.sleeve.trim(), ds: [] }).ds.push(d) : soltos.push(d);
+  const linha = d => {
+    const st = statusDeck(d, U);
+    return `<div class="dk" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
+      <div class="sub muted">${st.total} cartas · ${st.falta ? `<span class="tag er">faltam ${st.falta}</span>` : `<span class="tag ok">completo</span>`}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
+  };
+  const caixa = (titulo, borda, ds, nota) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
+      <b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
+  $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:12px">＋ Novo deck</button><div class="lst">` +
+    Object.values(sleeves).sort((a, b) => a.nome.localeCompare(b.nome)).map(s => caixa(s.nome, "solid " + corSleeve(s.nome), s.ds, s.ds.length > 1 ? "dividem as cartas" : "")).join("") +
+    (soltos.length ? caixa("Sem sleeve", "solid var(--line2)", soltos, "cada um com as suas cartas") : "") +
+    (rasc.length ? caixa("Rascunhos", "dashed var(--tx3)", rasc, "não ocupam cartas") : "") +
+    "</div>" + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
 }
 function statusDeck(d, U) {
   let total = totalEnergia(d), falta = 0, rot = 0;
@@ -425,6 +630,7 @@ function telaDeck() {
   $("titulo").textContent = d.name; $("sub").textContent = `${st.total} cartas${d.sleeve ? " · " + d.sleeve : ""}`;
   const linhas = Object.entries(d.list).map(([id, n]) => ({ id, n, c: D.cards[id] }))
     .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
+  vistos = linhas.map(x => x.id);
   const html = blocos(linhas.map(({ id, n, c }) => {
     const livre = Math.max(0, c.qty - usado(U, id, g)), falta = Math.max(0, n - livre);
     // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
@@ -432,9 +638,10 @@ function telaDeck() {
     const outros = decksDe(U, id, g);
     const st = !falta && !comOutro ? `<span class="tag ok">✓ tenho</span>`
       : `${falta ? `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}` : ""}${comOutro ? `<span class="tag wa">${comOutro} com ${quem(id, "saiu")}</span>` : ""}${deOutro ? `<span class="tag wa">${deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
-    if (grade()) return tile(id, c, n, st);
+    const tenho = falta ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${falta})">＋ Tenho ${falta}</button>` : "";
+    if (grade()) return tile(id, c, n, st + tenho);
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
-      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}</div></div>
+      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}${tenho}</div></div>
       <div class="qt"><button onclick="mudaDeck('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="mudaDeck('${esc(id)}',1)">+</button></div></div>`;
   }));
   $("tela").innerHTML = `
@@ -443,7 +650,11 @@ function telaDeck() {
       <button class="btn" onclick="abrirBusca('deck')">＋ Carta</button>
       <button class="btn sec" onclick="editarDeck()">Editar / colar lista</button></div>
     <button class="btn sec" onclick="exportarDeck()" style="margin-bottom:10px">Exportar lista (copiar)</button>
-    ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.</div>` : ""}
+    ${d.rascunho ? `<div class="card" style="border:2px dashed var(--tx3)"><b>Rascunho</b> — não ocupa cartas do estoque e não entra na lista de compras. Quando montar de verdade, desmarque em "Editar".</div>`
+      : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh"><span class="dot" style="background:${corSleeve(d.sleeve)}"></span><b>${esc(d.sleeve)}</b></div>
+        <div class="sub">${(() => { const outros = D.decks.filter(x => x !== d && !x.rascunho && grupo(x) === g).map(x => esc(x.name)); return outros.length ? `Divide o sleeve com: <b>${outros.join(", ")}</b>` : "Sozinho nesse sleeve."; })()}</div></div>` : ""}
+    ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.
+      <button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho todas</button></div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${html || `<p class="muted">Deck vazio.</p>`}</div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
@@ -457,6 +668,19 @@ function telaDeck() {
         ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${t}</button>`).join("")}</div></div>
     ${d.falhas?.length ? `<div class="card"><b>Não encontrei na base:</b>${d.falhas.map(l => `<div class="sub">${esc(l)}</div>`).join("")}<button class="btn sec" style="margin-top:8px" onclick="deckAberto.falhas=[];salvar();render()">Limpar aviso</button></div>` : ""}
     <button class="btn del" onclick="apagarDeck()" style="margin-top:6px">Apagar deck</button>`;
+}
+// "Já tenho": cadastra no estoque, de uma vez, as cópias que o deck diz que faltam
+function jaTenho(id, n) {
+  const c = D.cards[id]; c.qty += n; salvar(); render();
+  toast(`+${n} ${c.name} no estoque (agora ${c.qty})`);
+}
+function tenhoTodas() {
+  const U = calcUso(), g = grupo(deckAberto);
+  const faltas = Object.entries(deckAberto.list).map(([id, n]) => [id, n - Math.max(0, D.cards[id].qty - usado(U, id, g))]).filter(([, f]) => f > 0);
+  const total = faltas.reduce((s, [, f]) => s + f, 0);
+  if (!confirm(`Cadastrar no estoque as ${total} cartas que faltam nesse deck?`)) return;
+  for (const [id, f] of faltas) D.cards[id].qty += f;
+  salvar(); render(); toast(`+${total} cartas no estoque`);
 }
 function mudaEnergia(t, n) {
   const e = deckAberto.energias ??= {};
@@ -475,9 +699,15 @@ function apagarDeck() {
 function prepararFormDeck(d) {
   $("deckFormTit").textContent = d ? "Editar deck" : "Novo deck";
   $("dNome").value = d?.name || ""; $("dSleeve").value = d?.sleeve || ""; $("dLista").value = "";
+  $("dRasc").checked = !!d?.rascunho; corDoSleeve();
   $("dLista").placeholder = d ? "Colar lista SUBSTITUI as cartas do deck. Deixe vazio pra só renomear." : "4 Dreepy TWM 128\n4 Arven SVI 166\n...";
   $("sleeves").innerHTML = [...new Set(D.decks.map(x => x.sleeve).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
   $("deckMsg").textContent = ""; $("deckOk").disabled = false; $("dlgDeck").showModal();
+}
+// sleeve já usado puxa a cor dele; sleeve novo ganha a próxima cor da paleta
+function corDoSleeve() {
+  const s = $("dSleeve").value.trim().toLowerCase();
+  $("dCor").value = D.sleeves?.[s] || PALETA[Object.keys(D.sleeves || {}).length % PALETA.length];
 }
 const novoDeck = () => { deckAberto = null; prepararFormDeck(null); };
 const editarDeck = () => prepararFormDeck(deckAberto);
@@ -485,7 +715,8 @@ async function salvarDeck() {
   const nome = $("dNome").value.trim(); if (!nome) return $("dNome").focus();
   let d = deckAberto;
   if (!d) { d = { id: Date.now().toString(36), name: "", sleeve: "", list: {}, energias: {}, falhas: [] }; }
-  d.name = nome; d.sleeve = $("dSleeve").value.trim();
+  d.name = nome; d.sleeve = $("dSleeve").value.trim(); d.rascunho = $("dRasc").checked;
+  if (d.sleeve) (D.sleeves ??= {})[d.sleeve.toLowerCase()] = $("dCor").value;
   const txt = $("dLista").value.trim();
   if (txt) {
     $("deckOk").disabled = true; $("deckMsg").textContent = "Buscando as cartas na base…";
@@ -546,28 +777,60 @@ async function exportarDeck() {
 // ---------- compras ----------
 const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - c.qty })).filter(x => x.n > 0)
   .sort((a, b) => a.c.name.localeCompare(b.c.name));
-function telaCompras() {
-  const U = calcUso(), itens = faltando(U);
-  const total = itens.reduce((s, x) => s + x.n, 0);
-  $("titulo").textContent = "Comprar"; $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} pra fechar os decks` : "nada faltando";
-  $("tela").innerHTML = itens.length ? `<button class="btn" onclick="copiarCompras()" style="margin-bottom:12px">Copiar lista</button>
-    <div class="card">${blocos(itens.map(({ id, c, n }) => grade() ? tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}</span>`) : `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
-      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
-      <div class="sub">${esc(decksDe(U, id).join(", "))}</div></div><div class="qt"><b style="font-size:18px">${n}×</b></div></div>`))}</div>`
-    : `<p class="muted">Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.</p>`;
+// Sobrando: do Standard guarda D.guardar cópias (ou o que os decks usam, se for mais); rotacionada sem deck sobra toda.
+const sobrando = U => Object.entries(D.cards).map(([id, c]) => {
+  const em = usado(U, id), fora = somaEmp(id, "saiu"), livre = c.qty - em - fora;
+  return { id, c, n: legal(c) ? Math.min(livre, c.qty - Math.max(em, D.guardar ?? 4) - fora) : livre };
+}).filter(x => x.n > 0).sort((a, b) => a.c.name.localeCompare(b.c.name));
+const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function somaPreco(itens) {
+  const com = itens.filter(x => x.c.preco);
+  return { valor: com.reduce((s, x) => s + x.c.preco * x.n, 0), sem: itens.length - com.length };
 }
-function copiarCompras() {
-  const txt = faltando(calcUso()).map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})`).join("\n");
+let lista = "comprar";
+function telaCompras() {
+  const U = calcUso(), compra = lista === "comprar", itens = compra ? faltando(U) : sobrando(U);
+  vistos = itens.map(x => x.id);
+  const total = itens.reduce((s, x) => s + x.n, 0), p = somaPreco(itens);
+  const valor = p.valor ? ` · ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "";
+  $("titulo").textContent = compra ? "Comprar" : "Pra troca";
+  $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} ${compra ? "pra fechar os decks" : "sobrando"}${valor}` : compra ? "nada faltando" : "nada sobrando";
+  const item = ({ id, c, n }) => grade() ? tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}${c.preco ? " · " + brl(c.preco) : ""}</span>`) : `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
+      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
+      <div class="sub">${c.preco ? `<b>${brl(c.preco * n)}</b> · ` : ""}${esc(compra ? decksDe(U, id).join(", ") : usado(U, id) ? `${usado(U, id)} em deck` : legal(c) ? `guardando ${Math.min(c.qty, D.guardar ?? 4)}` : "rotacionada, nenhum deck usa")}</div></div>
+      <div class="qt"><b style="font-size:18px">${n}×</b></div></div>`;
+  $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">
+      <button class="btn${compra ? "" : " sec"}" onclick="lista='comprar';render()">🛒 Comprar</button>
+      <button class="btn${compra ? " sec" : ""}" onclick="lista='troca';render()">🔁 Pra troca</button></div>` +
+    (itens.length ? `<button class="btn sec" onclick="copiarLista()" style="margin-bottom:12px">Copiar lista</button><div class="card">${blocos(itens.map(item))}</div>`
+      : `<p class="muted">${compra ? "Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar."
+        : `Nenhuma carta sobrando. Das cartas do Standard você guarda ${D.guardar ?? 4} cópias (muda em ⚙ Ajustes); rotacionadas que nenhum deck usa aparecem aqui.`}</p>`);
+}
+function copiarLista() {
+  const U = calcUso(), itens = lista === "comprar" ? faltando(U) : sobrando(U), p = somaPreco(itens);
+  const txt = itens.map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})${c.preco ? " — " + brl(c.preco * n) : ""}`).join("\n") + (p.valor ? `\nTotal: ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "");
   navigator.clipboard.writeText(txt).then(() => toast("Lista copiada"), () => toast("Não deu pra copiar"));
+}
+function definirPreco(id, v) {
+  const c = D.cards[id], n = parseFloat(String(v).replace(/[^\d,.]/g, "").replace(",", "."));
+  if (n > 0) { c.preco = n; c.precoEm = new Date().toISOString().slice(0, 10); } else { delete c.preco; delete c.precoEm; }
+  salvar(); abrirCarta(id);
 }
 
 // ---------- ajustes / backup ----------
 function abrirAjustes() {
-  $("aMarcas").value = D.marcas;
+  $("aMarcas").value = D.marcas; $("aGuardar").value = D.guardar ?? 4; $("aCid").value = D.driveCid || "";
   $("bkInfo").textContent = D.bk ? `Último backup: ${new Date(D.bk).toLocaleDateString("pt-BR")}` : "Nenhum backup feito ainda.";
-  $("dlgAjustes").showModal();
+  if (!$("dlgAjustes").open) $("dlgAjustes").showModal();
+  nuvem();
 }
-function salvarAjustes() { D.marcas = $("aMarcas").value.toUpperCase().trim(); salvar(); $("dlgAjustes").close(); render(); }
+function salvarAjustes(conectarDrive) {
+  D.marcas = $("aMarcas").value.toUpperCase().trim();
+  D.guardar = Math.max(0, parseInt($("aGuardar").value, 10) || 0);
+  D.driveCid = $("aCid").value.trim();
+  salvar(); render();
+  if (conectarDrive) sincronizar(true); else $("dlgAjustes").close();
+}
 function exportar() {
   D.bk = Date.now(); salvar();
   const a = document.createElement("a");
@@ -585,7 +848,10 @@ function importar(f) {
   }).catch(() => alert("Arquivo de backup inválido.")).finally(() => $("fImp").value = "");
 }
 
-render();
+render(); nuvem();
+if (tokenValido()) sincronizar(false);
+// voltando pro app (ex.: depois de mexer no computador), puxa o que mudou
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sincronizar(false));
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
 </script>
 </body>

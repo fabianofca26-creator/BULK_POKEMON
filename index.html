@@ -1192,7 +1192,9 @@ function ratear(num) {
   for (const x of [...Object.values(D.cards).flatMap(c => c.copias || []), ...(D.caminho || [])])
     if (x.ped === num) { const f = fretePorCopia(ped, x.it); f ? x.frete = f : delete x.frete; }
 }
-function definirFrete(num, v) { D.pedidos[num].frete = numero(v); ratear(num); salvar(); abrirPed(num); }
+function definirFrete(num, v) { const ped = D.pedidos[num]; ped.frete = numero(v); if (ped.frete) delete ped.freteGratis; ratear(num); salvar(); abrirPed(num); }
+// frete grátis é diferente de "não anotei o frete": zera o frete e a lista mostra que foi grátis
+function freteGratis(num, sim) { const ped = D.pedidos[num]; sim ? (ped.freteGratis = true, ped.frete = 0) : delete ped.freteGratis; ratear(num); salvar(); abrirPed(num); }
 // Item de outra pessoa sai do seu estoque (ou do "a caminho"); voltando pra você, entra de novo.
 function mudarDono(num, k, dono) {
   const ped = D.pedidos[num], it = ped.itens[k], antes = it.dono || "";
@@ -1263,7 +1265,7 @@ function htmlPedidos() {
     const P = contasPedido(ped), eu = P[""] || { n: 0, cartas: 0, frete: 0 }, outros = Object.entries(P).filter(([d]) => d);
     const tot = Object.values(P).reduce((s, p) => s + p.cartas, 0), n = ped.itens.reduce((s, i) => s + i.n, 0);
     return `<div class="card" style="cursor:pointer" onclick="abrirPed('${num}')"><div class="slh"><b>#${num}</b><span class="muted">${ped.data.split("-").reverse().join("/")} · ${n} cartas${(D.caminho || []).some(e => e.ped === num) ? " · a caminho" : ""}</span></div>
-      <div class="sub">${ped.frete ? `${brl(tot)} + frete ${brl(ped.frete)} = <b>${brl(tot + ped.frete)}</b>` : `<b>${brl(tot)}</b> · sem frete anotado`}</div>
+      <div class="sub">${ped.frete ? `${brl(tot)} + frete ${brl(ped.frete)} = <b>${brl(tot + ped.frete)}</b>` : `<b>${brl(tot)}</b> · ${ped.freteGratis ? "frete grátis" : "sem frete anotado"}`}</div>
       ${outros.length ? `<div class="sub">Sua parte: <b>${brl(eu.cartas + eu.frete)}</b> · ${outros.map(([d, p]) => `${esc(d)}: ${brl(p.cartas + p.frete)}`).join(" · ")}</div>` : ""}</div>`;
   }).join("") + `</div>`;
 }
@@ -1272,7 +1274,8 @@ function abrirPed(num) {
   $("pessoas").innerHTML = [...new Set([...Object.values(D.pedidos || {}).flatMap(p => (p.itens || []).map(i => i.dono)), ...D.emp.map(e => e.pessoa)].filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
   dlg.innerHTML = `<h2>Pedido #${num}</h2>
     <p class="muted" style="margin-top:-8px">MYP Cards · ${ped.data.split("-").reverse().join("/")} · importado em ${ped.importado.split("-").reverse().join("/")}</p>
-    <div class="field"><label>Frete que você pagou (R$)</label><input inputmode="decimal" placeholder="0,00" value="${ped.frete ? ped.frete.toFixed(2).replace(".", ",") : ""}" onchange="definirFrete('${num}',this.value)"></div>
+    <div class="field"><label>Frete que você pagou (R$)</label><input inputmode="decimal" placeholder="${ped.freteGratis ? "grátis" : "0,00"}"${ped.freteGratis ? " disabled" : ""} value="${ped.frete ? ped.frete.toFixed(2).replace(".", ",") : ""}" onchange="definirFrete('${num}',this.value)">
+      <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px;color:var(--tx)"><input type="checkbox" style="width:auto"${ped.freteGratis ? " checked" : ""} onchange="freteGratis('${num}',this.checked)"> Frete grátis</label></div>
     <p class="muted" style="margin-top:-6px">O frete é dividido entre os itens na proporção do valor de cada um, e cada cópia guarda a sua parte.</p>
     <div class="grp">Quem paga o quê</div>
     ${Object.entries(P).sort(([a], [b]) => a.localeCompare(b)).map(([d, p]) => `<div class="row" style="margin-bottom:8px"><div><b>${d ? esc(d) : "Você"}</b>

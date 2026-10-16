@@ -93,6 +93,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 <nav>
   <button data-a="estoque" onclick="ir('estoque')"><span>🗃</span>Estoque</button>
   <button data-a="decks" onclick="ir('decks')"><span>🃏</span>Decks</button>
+  <button data-a="emp" onclick="ir('emp')"><span>🤝</span>Empréstimos</button>
   <button data-a="compras" onclick="ir('compras')"><span>🛒</span>Comprar</button>
 </nav>
 
@@ -104,6 +105,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
     <button class="btn" style="flex:none;width:auto" onclick="buscar()">Buscar</button>
   </div>
   <p class="muted" id="buscaMsg">Dica: coloque o número junto do nome pra achar a carta exata. Toque na carta pra somar +1.</p>
+  <select id="buscaSet" class="hide" style="margin-top:8px" onchange="mostrarBusca()"></select>
   <div class="grid" id="buscaRes"></div>
   <button class="btn sec" style="margin-top:12px" onclick="dlgBusca.close();render()">Fechar</button>
 </dialog>
@@ -140,7 +142,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 const API = "https://api.tcgdex.net/v2";
 const KEY = "pkst_v1";
 // cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energia,falhas:[linhas]}
-let D = Object.assign({ cards: {}, decks: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
+let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
 let aba = "estoque", deckAberto = null, filtro = "", modoBusca = null;
 
 const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
@@ -170,6 +172,45 @@ function calcUso() {
 const usado = (U, id, exceto) => Object.entries(U[id] || {}).reduce((s, [g, u]) => g === exceto ? s : s + u.n, 0);
 const decksDe = (U, id, exceto) => Object.entries(U[id] || {}).filter(([g]) => g !== exceto).flatMap(([, u]) => u.decks);
 
+// ---------- empréstimos ----------
+// tipo "saiu" = carta minha com outra pessoa; "entrou" = carta de outra pessoa comigo
+const emps = (id, tipo) => D.emp.filter(e => e.card === id && e.tipo === tipo);
+const somaEmp = (id, tipo) => emps(id, tipo).reduce((s, e) => s + e.n, 0);
+const quem = (id, tipo) => esc([...new Set(emps(id, tipo).map(e => e.pessoa))].join(", "));
+function registrarEmp(id, tipo) {
+  const c = D.cards[id];
+  const pessoa = prompt(tipo === "saiu" ? `Emprestou ${c.name} pra quem?` : `Pegou ${c.name} de quem?`, D.ultPessoa || "")?.trim();
+  if (!pessoa) return false;
+  const n = parseInt(prompt("Quantas cópias?", "1"), 10);
+  if (!(n > 0)) return false;
+  D.emp.push({ id: Date.now().toString(36), card: id, n, pessoa, tipo, data: new Date().toISOString().slice(0, 10) });
+  D.ultPessoa = pessoa; salvar(); toast(`${n}× ${c.name} ${tipo === "saiu" ? "com" : "de"} ${pessoa}`);
+  return true;
+}
+function devolver(eid) {
+  const e = D.emp.find(x => x.id === eid), c = D.cards[e.card];
+  if (!confirm(`Marcar ${e.n}× ${c.name} como devolvida (${e.pessoa})?`)) return;
+  D.emp = D.emp.filter(x => x !== e); salvar();
+  if ($("dlgCarta").open) abrirCarta(e.card);
+  render();
+}
+function telaEmp() {
+  const porPessoa = {};
+  for (const e of D.emp) (porPessoa[e.pessoa] ??= []).push(e);
+  $("titulo").textContent = "Empréstimos";
+  $("sub").textContent = D.emp.length ? `${Object.keys(porPessoa).length} pessoa${Object.keys(porPessoa).length > 1 ? "s" : ""}` : "nada emprestado";
+  $("tela").innerHTML = `<div class="row" style="margin-bottom:6px">
+      <button class="btn" onclick="abrirBusca('saiu')">Emprestei</button>
+      <button class="btn sec" onclick="abrirBusca('entrou')">Peguei emprestado</button></div>` +
+    Object.entries(porPessoa).sort().map(([p, es]) => `<div class="grp">${esc(p)}</div><div class="card">` + es.map(e => {
+      const c = D.cards[e.card];
+      return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(e.card)}')"><div class="nm">${esc(c.name)}</div>
+        <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
+        <div class="sub">${e.tipo === "saiu" ? `<span class="tag wa">você emprestou ${e.n}</span>` : `<span class="tag er">você pegou ${e.n} — devolver</span>`} <span class="muted">${e.data.split("-").reverse().join("/")}</span></div></div>
+        <button class="btn sec" style="width:auto;flex:none;padding:8px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`;
+    }).join("") + "</div>").join("") + (D.emp.length ? "" : `<p class="muted">Nenhuma carta emprestada.</p>`);
+}
+
 // ---------- base TCGdex ----------
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
 let setsCache = {};
@@ -185,15 +226,15 @@ async function garantir(id) {
 function ir(a) { aba = a; deckAberto = null; render(); scrollTo(0, 0); }
 function render() {
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.a === aba));
-  ({ estoque: telaEstoque, decks: deckAberto ? telaDeck : telaDecks, compras: telaCompras })[aba]();
+  ({ estoque: telaEstoque, decks: deckAberto ? telaDeck : telaDecks, compras: telaCompras, emp: telaEmp })[aba]();
 }
 
 function linhaEstoque(id, c, U) {
-  const em = usado(U, id), livre = c.qty - em;
+  const em = usado(U, id), fora = somaEmp(id, "saiu"), livre = c.qty - em - fora;
   return `<div class="lin">${thumb(c)}
     <div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
       <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
-      <div class="sub">${em ? `${em} em deck · <b>${livre < 0 ? 0 : livre} livre${livre === 1 ? "" : "s"}</b>` : "nenhuma em deck"}</div></div>
+      <div class="sub">${em || fora ? `${em ? `${em} em deck · ` : ""}${fora ? `${fora} com ${quem(id, "saiu")} · ` : ""}<b>${livre < 0 ? 0 : livre} livre${livre === 1 ? "" : "s"}</b>` : "nenhuma em deck"}</div></div>
     <div class="qt"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>`;
 }
 
@@ -230,6 +271,8 @@ function abrirCarta(id) {
     <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
     <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
+    <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
+    <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
   if (!dlg.open) dlg.showModal();
 }
@@ -237,8 +280,8 @@ function abrirCarta(id) {
 // ---------- busca/cadastro ----------
 function abrirBusca(modo) {
   modoBusca = modo;
-  $("buscaTit").textContent = modo === "estoque" ? "Cadastrar carta" : "Adicionar ao deck";
-  $("buscaRes").innerHTML = ""; $("q").value = "";
+  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?" }[modo];
+  $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
   $("dlgBusca").showModal(); $("q").focus();
 }
 async function buscar() {
@@ -252,16 +295,26 @@ async function buscar() {
     const S = await sets(lang), setDe = id => id.slice(0, id.lastIndexOf("-"));
     if (num !== null) r = r.filter(c => parseInt(c.localId, 10) === num);
     r.sort((a, b) => (S[setDe(b.id)]?.i ?? -1) - (S[setDe(a.id)]?.i ?? -1));
-    $("buscaMsg").textContent = r.length ? `${r.length} carta${r.length > 1 ? "s" : ""}${r.length > 90 ? " (mostrando as 90 mais novas — coloque o número pra afinar)" : ""}. Toque pra somar +1.` : "Nada encontrado.";
-    $("buscaRes").innerHTML = r.slice(0, 90).map(c => `<div class="res" onclick="escolher('${esc(c.id)}')">
-      ${c.image ? `<img loading="lazy" src="${c.image}/low.webp" alt="">` : `<img alt="">`}
-      <b>${esc(c.name)}</b><br><span class="muted">${esc(S[setDe(c.id)]?.name || setDe(c.id))} · ${esc(c.localId)}</span></div>`).join("");
+    ultBusca = r.map(c => ({ ...c, setNome: S[setDe(c.id)]?.name || setDe(c.id) }));
+    const nomes = [...new Set(ultBusca.map(c => c.setNome))];
+    $("buscaSet").innerHTML = `<option value="">Todas as coleções (${nomes.length})</option>` + nomes.map(n => `<option>${esc(n)}</option>`).join("");
+    $("buscaSet").classList.toggle("hide", nomes.length < 2);
+    mostrarBusca();
   } catch { $("buscaMsg").textContent = "Sem conexão com a base de cartas. A busca precisa de internet."; }
+}
+let ultBusca = [];
+function mostrarBusca() {
+  const set = $("buscaSet").value, r = ultBusca.filter(c => !set || c.setNome === set);
+  $("buscaMsg").textContent = r.length ? `${r.length} carta${r.length > 1 ? "s" : ""}${r.length > 90 ? " (mostrando as 90 mais novas — escolha a coleção ou coloque o número)" : ""}. ${modoBusca === "estoque" || modoBusca === "deck" ? "Toque pra somar +1." : "Toque na carta."}` : "Nada encontrado.";
+  $("buscaRes").innerHTML = r.slice(0, 90).map(c => `<div class="res" onclick="escolher('${esc(c.id)}')">
+      ${c.image ? `<img loading="lazy" src="${c.image}/low.webp" alt="">` : `<img alt="">`}
+      <b>${esc(c.name)}</b><br><span class="muted">${esc(c.setNome)} · ${esc(c.localId)}</span></div>`).join("");
 }
 async function escolher(id) {
   try {
     const c = await garantir(id);
     if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); }
+    else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
     else { const d = deckAberto; d.list[id] = (d.list[id] || 0) + 1; toast(`${c.name}: ${d.list[id]} no deck`); }
     salvar();
   } catch { toast("Sem conexão — não deu pra buscar a carta."); }
@@ -297,9 +350,11 @@ function telaDeck() {
     .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
   const html = linhas.map(({ id, n, c }) => {
     const livre = Math.max(0, c.qty - usado(U, id, g)), falta = Math.max(0, n - livre);
+    // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
+    const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
     const outros = decksDe(U, id, g);
-    const st = !falta ? `<span class="tag ok">✓ tenho</span>`
-      : `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}`;
+    const st = !falta && !comOutro ? `<span class="tag ok">✓ tenho</span>`
+      : `${falta ? `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}` : ""}${comOutro ? `<span class="tag wa">${comOutro} com ${quem(id, "saiu")}</span>` : ""}${deOutro ? `<span class="tag wa">${deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}</div></div>
       <div class="qt"><button onclick="mudaDeck('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="mudaDeck('${esc(id)}',1)">+</button></div></div>`;
@@ -386,7 +441,7 @@ function telaCompras() {
   $("titulo").textContent = "Comprar"; $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} pra fechar os decks` : "nada faltando";
   $("tela").innerHTML = itens.length ? `<button class="btn" onclick="copiarCompras()" style="margin-bottom:12px">Copiar lista</button>
     <div class="card">${itens.map(({ id, c, n }) => `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
-      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}</div>
+      <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
       <div class="sub">${esc(decksDe(U, id).join(", "))}</div></div><div class="qt"><b style="font-size:18px">${n}×</b></div></div>`).join("")}</div>`
     : `<p class="muted">Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.</p>`;
 }
@@ -415,7 +470,7 @@ function importar(f) {
     const n = JSON.parse(t);
     if (!n.cards || !Array.isArray(n.decks)) throw 0;
     if (!confirm("Substituir TODOS os dados deste celular pelo backup?")) return;
-    D = Object.assign({ marcas: "H I J", bk: 0 }, n); salvar(); $("dlgAjustes").close(); ir("estoque"); toast("Backup restaurado");
+    D = Object.assign({ emp: [], marcas: "H I J", bk: 0 }, n); salvar(); $("dlgAjustes").close(); ir("estoque"); toast("Backup restaurado");
   }).catch(() => alert("Arquivo de backup inválido.")).finally(() => $("fImp").value = "");
 }
 

@@ -82,6 +82,23 @@ dialog h2{font-size:17px;margin-bottom:12px}
 .big{display:block;width:min(70%,260px);margin:0 auto 12px;border-radius:10px}
 #toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw;transition:opacity .2s;opacity:0;pointer-events:none}
 #toast.on{opacity:1}
+/* computador: abas na lateral, conteúdo largo, cartas em colunas */
+@media (min-width:900px){
+  body{padding:0 0 30px 210px}
+  .wrap{max-width:1100px;padding:0 28px}
+  nav{top:0;right:auto;width:210px;flex-direction:column;border-top:0;border-right:1px solid var(--line);padding:70px 10px 0}
+  nav button{flex:none;display:flex;align-items:center;gap:12px;padding:11px 14px;font-size:15px;border-radius:10px;text-align:left}
+  nav button span{display:inline;font-size:18px}
+  nav button.on{background:var(--line)}
+  .lst{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));column-gap:28px}
+  .lst .lin:last-child{border-bottom:1px solid var(--line)}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+  #tela .btn{width:auto;padding:11px 22px;margin-right:8px}
+  #tela .row{justify-content:flex-start}
+  #tela .row>.btn{flex:none}
+  #dlgBusca{width:min(94vw,960px)}
+  #toast{bottom:24px;margin-left:105px}
+}
 </style>
 </head>
 <body>
@@ -108,6 +125,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
     <input id="q" placeholder="Nome da carta (ex.: pikachu 25)" enterkeyhint="search" onkeydown="if(event.key==='Enter')buscar()">
     <button class="btn" style="flex:none;width:auto" onclick="buscar()">Buscar</button>
   </div>
+  <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px;color:var(--tx)"><input type="checkbox" id="soStd" style="width:auto" onchange="$('q').value&&buscar()"> Só cartas válidas no Standard</label>
   <p class="muted" id="buscaMsg">Dica: coloque o número junto do nome pra achar a carta exata. Toque na carta pra somar +1.</p>
   <select id="buscaSet" class="hide" style="margin-top:8px" onchange="mostrarBusca()"></select>
   <div class="grid" id="buscaRes"></div>
@@ -147,7 +165,7 @@ const API = "https://api.tcgdex.net/v2";
 const KEY = "pkst_v1";
 // cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energia,falhas:[linhas]}
 let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
-let aba = "estoque", deckAberto = null, filtro = "", modoBusca = null, trocaDe = null;
+let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", modoBusca = null, trocaDe = null;
 
 const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
 const $ = id => document.getElementById(id);
@@ -238,7 +256,7 @@ function render() {
 const grade = () => D.vista === "grade";
 const tile = (id, c, badge, sub) => `<div class="res" onclick="abrirCarta('${esc(id)}')"><div class="tw">${c.img ? `<img loading="lazy" src="${img(c)}" alt="">` : `<img alt="">`}<span class="qb">${badge}</span></div>
   <b>${esc(c.name)}</b>${regTag(c)}<br>${sub}</div>`;
-const blocos = itens => grade() ? `<div class="grid" style="margin:0">${itens.join("")}</div>` : itens.join("");
+const blocos = itens => grade() ? `<div class="grid" style="margin:0">${itens.join("")}</div>` : `<div class="lst">${itens.join("")}</div>`;
 function linhaEstoque(id, c, U) {
   const em = usado(U, id), fora = somaEmp(id, "saiu"), livre = c.qty - em - fora;
   if (grade()) return tile(id, c, c.qty, `<span class="muted">${Math.max(0, livre)} livre${livre === 1 ? "" : "s"}</span>`);
@@ -254,17 +272,21 @@ function telaEstoque() {
   $("titulo").textContent = "Estoque";
   $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes`;
   $("tela").innerHTML = `
-    <input id="filtro" placeholder="Já tenho essa carta? Busque aqui…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()" style="margin-bottom:10px">
+    <div class="row" style="margin-bottom:10px">
+      <input id="filtro" placeholder="Já tenho essa carta? Busque aqui…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()">
+      <select style="flex:none;width:auto" onchange="filtroRot=this.value;telaEstoqueLista()">
+        ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
+      </select></div>
     <button class="btn" onclick="abrirBusca('estoque')" style="margin-bottom:12px">＋ Cadastrar carta</button>
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
 function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
-  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)))
+  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)) && (!filtroRot || legal(c) === (filtroRot === "std")))
     .sort(([, a], [, b]) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
   $("lista").innerHTML = lista.length ? blocos(lista.map(([id, c]) => linhaEstoque(id, c, U)))
-    : `<p class="muted">${f ? "Você não tem nenhuma carta com esse nome." : "Nenhuma carta cadastrada ainda."}</p>`;
+    : `<p class="muted">${f || filtroRot ? "Nenhuma carta sua com esse filtro." : "Nenhuma carta cadastrada ainda."}</p>`;
 }
 
 function mudaQtd(id, d) {
@@ -323,8 +345,9 @@ async function buscar() {
   const m = t.match(/^(.*?)\s+(\d+)$/), nome = m ? m[1] : t, num = m ? +m[2] : null;
   $("buscaMsg").textContent = "Buscando…"; $("buscaRes").innerHTML = "";
   try {
-    let lang = "pt", r = await getJSON(`${API}/pt/cards?name=${encodeURIComponent(nome)}`);
-    if (!r.length) { lang = "en"; r = await getJSON(`${API}/en/cards?name=${encodeURIComponent(nome)}`); }
+    const q = `cards?name=${encodeURIComponent(nome)}${$("soStd").checked ? "&legal.standard=true" : ""}`;
+    let lang = "pt", r = await getJSON(`${API}/pt/${q}`);
+    if (!r.length) { lang = "en"; r = await getJSON(`${API}/en/${q}`); }
     const S = await sets(lang), setDe = id => id.slice(0, id.lastIndexOf("-"));
     if (num !== null) r = r.filter(c => parseInt(c.localId, 10) === num);
     r.sort((a, b) => (S[setDe(b.id)]?.i ?? -1) - (S[setDe(a.id)]?.i ?? -1));
@@ -361,11 +384,11 @@ function telaDecks() {
   const porSleeve = {};
   for (const d of D.decks) (porSleeve[d.sleeve.trim() || "Sem sleeve"] ??= []).push(d);
   $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:6px">＋ Novo deck</button>` +
-    Object.entries(porSleeve).sort().map(([s, ds]) => `<div class="grp">${esc(s)}</div>` + ds.map(d => {
+    Object.entries(porSleeve).sort().map(([s, ds]) => `<div class="grp">${esc(s)}</div><div class="lst">` + ds.map(d => {
       const st = statusDeck(d, U);
       return `<div class="card" style="cursor:pointer" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
         <div class="sub muted">${st.total} cartas · ${st.falta ? `<span class="tag er">faltam ${st.falta}</span>` : `<span class="tag ok">completo</span>`}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div></div>`;
-    }).join("")).join("") + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
+    }).join("") + "</div>").join("") + (D.decks.length ? "" : `<p class="muted">Nenhum deck ainda.</p>`);
 }
 function statusDeck(d, U) {
   let total = d.energia || 0, falta = 0, rot = 0;

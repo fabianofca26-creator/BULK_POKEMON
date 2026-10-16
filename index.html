@@ -143,7 +143,7 @@ const API = "https://api.tcgdex.net/v2";
 const KEY = "pkst_v1";
 // cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energia,falhas:[linhas]}
 let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
-let aba = "estoque", deckAberto = null, filtro = "", modoBusca = null;
+let aba = "estoque", deckAberto = null, filtro = "", modoBusca = null, trocaDe = null;
 
 const salvar = () => localStorage.setItem(KEY, JSON.stringify(D));
 const $ = id => document.getElementById(id);
@@ -263,7 +263,7 @@ function mudaQtd(id, d) {
 }
 
 function abrirCarta(id) {
-  const c = D.cards[id], U = calcUso(), em = usado(U, id);
+  const c = D.cards[id], U = calcUso(), em = usado(U, id), noDeck = aba === "decks" && !!deckAberto?.list[id];
   const usos = D.decks.filter(d => d.list[id]).map(d => `<div class="sub">• ${esc(d.name)}: ${d.list[id]}${d.sleeve ? ` <span class="muted">(${esc(d.sleeve)})</span>` : ""}</div>`).join("");
   const dlg = $("dlgCarta");
   dlg.innerHTML = `${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
@@ -271,16 +271,38 @@ function abrirCarta(id) {
     <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)} · ${c.reg ? (legal(c) ? "válida no Standard" : "fora do Standard") : "sem marca de regulação"}</p>
     <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
     <div class="grp">Em decks (${em} ocupada${em === 1 ? "" : "s"})</div>${usos || `<p class="muted">Nenhum deck usa essa carta.</p>`}
+    ${noDeck || c.qty ? `<button class="btn sec" onclick="trocarColecao('${esc(id)}')">⇄ Trocar coleção${noDeck ? " neste deck" : ""}</button>` : ""}
     <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
     <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
   if (!dlg.open) dlg.showModal();
 }
 
+// ---------- reprint: mesma carta em outra coleção ----------
+function trocarColecao(id) {
+  trocaDe = id; $("dlgCarta").close();
+  abrirBusca("troca"); $("q").value = D.cards[id].name; buscar();
+}
+// No deck troca só a impressão daquele deck; no estoque move cópias de uma coleção pra outra.
+function trocar(de, para) {
+  if (de === para) { toast("É a mesma coleção."); return false; }
+  const a = D.cards[de], b = D.cards[para], d = deckAberto;
+  if (aba === "decks" && d?.list[de]) {
+    d.list[para] = (d.list[para] || 0) + d.list[de]; delete d.list[de];
+    toast(`${d.name}: agora usa ${b.name} de ${b.set}`);
+  } else {
+    const n = Math.min(parseInt(prompt(`Quantas das suas ${a.qty} cópias são de ${b.set}?`, a.qty), 10), a.qty);
+    if (!(n > 0)) return false;
+    a.qty -= n; b.qty += n;
+    toast(`${n}× movida${n > 1 ? "s" : ""} pra ${b.set}`);
+  }
+  salvar(); return true;
+}
+
 // ---------- busca/cadastro ----------
 function abrirBusca(modo) {
   modoBusca = modo;
-  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?" }[modo];
+  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção" }[modo];
   $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
   $("dlgBusca").showModal(); $("q").focus();
 }
@@ -314,6 +336,7 @@ async function escolher(id) {
   try {
     const c = await garantir(id);
     if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); }
+    else if (modoBusca === "troca") { if (trocar(trocaDe, id)) { $("dlgBusca").close(); render(); abrirCarta(id); } return; }
     else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
     else { const d = deckAberto; d.list[id] = (d.list[id] || 0) + 1; toast(`${c.name}: ${d.list[id]} no deck`); }
     salvar();

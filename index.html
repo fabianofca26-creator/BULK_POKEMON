@@ -78,6 +78,10 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
 @media (prefers-color-scheme:dark){ .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
 .tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
+#cpBox summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+#cpBox summary::-webkit-details-marker{display:none}
+#cpBox summary::after{content:"▾ recolher";text-transform:none;letter-spacing:0}
+#cpBox:not([open]) summary::after{content:"▸ mostrar"}
 .cp{display:grid;grid-template-columns:22px 1fr 96px;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .cp select,.cp input{padding:8px 9px;font-size:14px}
 .cp .loc{grid-column:2/4}
@@ -244,6 +248,7 @@ function copias(c) {
 function anotarNova(id) {
   if (!D.anotar) return;
   abrirCarta(id);
+  if ($("cpBox")) $("cpBox").open = true; // pra anotar, a seção precisa estar aberta
   const cps = $("dlgCarta").querySelectorAll(".cp"), ult = cps[cps.length - 1];
   if (ult) { ult.scrollIntoView({ block: "center" }); ult.querySelector("select").focus(); }
 }
@@ -536,7 +541,8 @@ function abrirCarta(id) {
     <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
       <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
     <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço de mercado anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Preço de mercado: consulte na Liga e anote aqui."}</p>
-    ${c.qty ? `<div class="grp">Suas cópias (${c.qty})</div><p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}` : ""}
+    ${c.qty ? `<details id="cpBox"${D.cpFechado ? "" : " open"} ontoggle="D.cpFechado=!this.open;localStorage.setItem(KEY,JSON.stringify(D))">
+      <summary class="grp">Suas cópias (${c.qty})</summary><p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}</details>` : ""}
     ${dk ? `<div class="grp">Neste deck: ${dk.list[id] || 0} · side: ${dk.side?.[id] || 0}</div>
       <div class="row" style="margin-bottom:8px">
         ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">↓ Passar 1 pro side</button>` : ""}

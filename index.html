@@ -802,6 +802,13 @@ function marcarImpressa(id, n) {
   m[id] = Math.max(0, (m[id] || 0) + n); if (!m[id]) delete m[id];
   salvar(); render();
 }
+// tira a marcação de proxy dessa carta em todos os decks (ela volta a aparecer como "falta" neles)
+function tirarProxy(id) {
+  const ds = D.decks.filter(d => d.proxy?.[id]);
+  if (!confirm(`Tirar ${D.cards[id].name} das proxies${ds.length > 1 ? ` (${ds.map(d => d.name).join(", ")})` : ""}?`)) return;
+  for (const d of ds) delete d.proxy[id];
+  salvar(); render();
+}
 function marcarTodasImpressas() {
   const pend = proxies().filter(x => x.n > 0), total = pend.reduce((s, x) => s + x.n, 0);
   if (!confirm(`Marcar as ${total} proxies como impressas?`)) return;
@@ -1032,7 +1039,7 @@ function telaCompras() {
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
       <div class="sub">${preco(c, n) ? `<b>${preco(c, n)}</b> · ` : ""}${esc(nota(x))}</div></div>
-      <div class="qt"><b style="font-size:18px">${n}×</b>${px ? `<button class="tenho" style="margin:0 0 0 6px" onclick="marcarImpressa('${esc(id)}',${n})">${ic("ok")} Imprimi</button>` : ""}</div></div>`;
+      <div class="qt"><b style="font-size:18px">${n}×</b>${px ? `<button class="tenho" title="Já imprimi" aria-label="Já imprimi" style="margin:0 0 0 6px;padding:5px 8px" onclick="marcarImpressa('${esc(id)}',${n})">${ic("ok")}</button><button title="Tirar das proxies" aria-label="Tirar das proxies" onclick="tirarProxy('${esc(id)}')">${ic("fechar")}</button>` : ""}</div></div>`;
   };
   // proxies já impressas ficam numa seção à parte, com "desfazer" (tira uma)
   const prontas = px ? proxies().filter(x => x.imp > 0) : [];
@@ -1046,7 +1053,7 @@ function telaCompras() {
   };
   $("tela").innerHTML = `<div class="row" style="margin-bottom:12px">` +
       Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" style="padding:10px 4px;font-size:14px" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>` +
-    (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()">${ic("ok")} Imprimi todas</button>` : ""}</div>
+    (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()" title="Marcar todas como impressas">${ic("ok")} Todas</button>` : ""}</div>
       <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${px && prontas.length ? "Tudo impresso." : vazios[lista]}</p>`) + impressas;
 }
 function copiarLista() {

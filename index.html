@@ -78,6 +78,9 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
 @media (prefers-color-scheme:dark){ .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
 .tenho.px{border-color:#7a4bb0;background:transparent;color:inherit}
+.cp{display:grid;grid-template-columns:22px 1fr 96px;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.cp select,.cp input{padding:8px 9px;font-size:14px}
+.cp .loc{grid-column:2/4}
 .tenho{border:1px solid var(--ok-tx);background:var(--ok-bg);color:var(--ok-tx);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;cursor:pointer;margin-top:3px}
 .navc{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .navc button{width:44px;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--card);font-size:20px;cursor:pointer;flex:none}
@@ -144,6 +147,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
     <button class="btn" style="flex:none;width:auto" onclick="buscar()">Buscar</button>
   </div>
   <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px;color:var(--tx)"><input type="checkbox" id="soStd" style="width:auto" onchange="$('q').value&&buscar()"> Só cartas válidas no Standard</label>
+  <label class="anotar" style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px;color:var(--tx)"><input type="checkbox" id="anotarBusca" style="width:auto" onchange="D.anotar=this.checked;salvar();document.querySelectorAll('.anotar input').forEach(x=>x.checked=D.anotar)"> Anotar ao cadastrar (versão, quanto paguei, onde guardei)</label>
   <p class="muted" id="buscaMsg">Dica: coloque o número junto do nome pra achar a carta exata. Toque na carta pra somar +1.</p>
   <select id="buscaSet" class="hide" style="margin-top:8px" onchange="mostrarBusca()"></select>
   <div class="grid" id="buscaRes"></div>
@@ -155,6 +159,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 <dialog id="dlgSet">
   <h2>Cadastrar por coleção</h2>
   <select id="setSel" onchange="carregarSet(this.value)"></select>
+  <label class="anotar" style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px;color:var(--tx)"><input type="checkbox" id="anotarSet" style="width:auto" onchange="D.anotar=this.checked;salvar();document.querySelectorAll('.anotar input').forEach(x=>x.checked=D.anotar)"> Anotar ao cadastrar (versão, quanto paguei, onde guardei)</label>
   <p class="muted" id="setMsg">Escolha a coleção. Toque na carta pra somar +1, no − pra tirar.</p>
   <div class="grid" id="setRes"></div>
   <button class="btn sec" style="margin-top:12px" onclick="dlgSet.close();render()">Fechar</button>
@@ -193,6 +198,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 </dialog>
 
 <div id="toast"></div>
+<datalist id="locais"></datalist>
 
 <script>
 const API = "https://api.tcgdex.net/v2";
@@ -220,7 +226,60 @@ for (const d of D.decks) if (!d.energias) {
 let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", modoBusca = null, trocaDe = null;
 let vistos = []; // ordem das cartas na tela atual, pras setas da janela da carta
 
-const salvar = () => { D.salvoEm = new Date().toISOString(); localStorage.setItem(KEY, JSON.stringify(D)); agendarSync(); };
+const salvar = () => {
+  for (const c of Object.values(D.cards)) if (c.copias) copias(c);
+  D.salvoEm = new Date().toISOString(); localStorage.setItem(KEY, JSON.stringify(D)); agendarSync();
+};
+
+// ---------- anotações por cópia: versão, quanto pagou, onde está guardada ----------
+const VERSOES = ["Normal", "Holo", "Reverse", "Reverse Poké Ball", "Reverse Master Ball", "Promo", "Outra"];
+// A lista de cópias acompanha a quantidade; quando diminui, saem primeiro as cópias sem nada anotado.
+function copias(c) {
+  const l = c.copias ??= [];
+  while (l.length < c.qty) l.push({});
+  while (l.length > c.qty) { const i = l.findLastIndex(x => !x.v && !x.pago && !x.local); l.splice(i >= 0 ? i : l.length - 1, 1); }
+  return l;
+}
+// com "Anotar ao cadastrar" ligado, abre a ficha da carta já na cópia que acabou de entrar
+function anotarNova(id) {
+  if (!D.anotar) return;
+  abrirCarta(id);
+  const cps = $("dlgCarta").querySelectorAll(".cp"), ult = cps[cps.length - 1];
+  if (ult) { ult.scrollIntoView({ block: "center" }); ult.querySelector("select").focus(); }
+}
+function setCopia(id, i, campo, valor) {
+  const cp = copias(D.cards[id])[i];
+  if (campo === "pago") valor = parseFloat(String(valor).replace(/[^\d,.]/g, "").replace(",", ".")) || 0;
+  else valor = String(valor).trim();
+  if (valor && valor !== "Normal") cp[campo] = valor; else delete cp[campo];
+  salvar(); resumoCopias(id);
+}
+function copiarPraTodas(id) {
+  const l = copias(D.cards[id]), [p] = l;
+  for (const cp of l.slice(1)) for (const k of ["v", "pago", "local"]) p[k] ? cp[k] = p[k] : delete cp[k];
+  salvar(); abrirCarta(id);
+}
+const pagoTotal = c => (c.copias || []).reduce((s, x) => s + (x.pago || 0), 0);
+// "2 Reverse · 📍 Pasta 1" — o que foi anotado nas cópias, pra mostrar na lista
+function resumoTexto(c) {
+  const v = {}, locais = new Set();
+  for (const x of c.copias || []) { if (x.v) v[x.v] = (v[x.v] || 0) + 1; if (x.local) locais.add(x.local); }
+  return [...Object.entries(v).map(([k, n]) => `${n} ${k}`), ...[...locais].map(l => "📍 " + l)].join(" · ");
+}
+function resumoCopias(id) {
+  const c = D.cards[id], el = $("cpResumo"); if (!el) return;
+  const pago = pagoTotal(c), comPreco = (c.copias || []).filter(x => x.pago).length;
+  el.textContent = pago ? `Você pagou ${brl(pago)} em ${comPreco} cópia${comPreco > 1 ? "s" : ""} (média ${brl(pago / comPreco)}).` : "Anote a versão, quanto pagou e onde está guardada.";
+}
+function htmlCopias(id) {
+  const c = D.cards[id], l = copias(c);
+  $("locais").innerHTML = [...new Set(Object.values(D.cards).flatMap(x => (x.copias || []).map(y => y.local)).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
+  return l.map((cp, i) => `<div class="cp"><b>${i + 1}</b>
+      <select onchange="setCopia('${esc(id)}',${i},'v',this.value)">${VERSOES.map(v => `<option${(cp.v || "Normal") === v ? " selected" : ""}>${v}</option>`).join("")}</select>
+      <input inputmode="decimal" placeholder="Pago R$" value="${cp.pago ? cp.pago.toFixed(2).replace(".", ",") : ""}" onchange="setCopia('${esc(id)}',${i},'pago',this.value)">
+      <input class="loc" list="locais" placeholder="Onde está (ex.: Pasta 1, Caixa bulk)" value="${esc(cp.local || "")}" onchange="setCopia('${esc(id)}',${i},'local',this.value)"></div>`).join("")
+    + (l.length > 1 ? `<button class="btn sec" style="padding:8px;font-size:13px" onclick="copiarPraTodas('${esc(id)}')">Repetir a 1ª cópia em todas</button>` : "");
+}
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -412,10 +471,12 @@ const tile = (id, c, badge, sub) => `<div class="res" onclick="abrirCarta('${esc
 const blocos = itens => grade() ? `<div class="grid" style="margin:0">${itens.join("")}</div>` : `<div class="lst">${itens.join("")}</div>`;
 function linhaEstoque(id, c, U) {
   const em = usado(U, id), fora = somaEmp(id, "saiu"), livre = c.qty - em - fora;
-  if (grade()) return tile(id, c, c.qty, `<span class="muted">${Math.max(0, livre)} livre${livre === 1 ? "" : "s"}</span>`);
+  const resumo = resumoTexto(c);
+  if (grade()) return tile(id, c, c.qty, `<span class="muted">${Math.max(0, livre)} livre${livre === 1 ? "" : "s"}${resumo ? "<br>" + esc(resumo) : ""}</span>`);
   return `<div class="lin">${thumb(c)}
     <div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
       <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
+      ${resumo ? `<div class="sub">${esc(resumo)}</div>` : ""}
       <div class="sub">${em || fora ? `${em ? `${em} em deck · ` : ""}${fora ? `${fora} com ${quem(id, "saiu")} · ` : ""}<b>${livre < 0 ? 0 : livre} livre${livre === 1 ? "" : "s"}</b>` : "nenhuma em deck"}</div></div>
     <div class="qt"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>`;
 }
@@ -424,10 +485,11 @@ function telaEstoque() {
   const U = calcUso(), meus = Object.entries(D.cards).filter(([, c]) => c.qty > 0);
   $("titulo").textContent = "Estoque";
   const valor = meus.reduce((s, [, c]) => s + (c.preco || 0) * c.qty, 0);
-  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · " + brl(valor) : ""}`;
+  const pago = meus.reduce((s, [, c]) => s + pagoTotal(c), 0);
+  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · vale " + brl(valor) : ""}${pago ? " · pago " + brl(pago) : ""}`;
   $("tela").innerHTML = `
     <div class="row" style="margin-bottom:10px">
-      <input id="filtro" placeholder="Já tenho essa carta? Busque aqui…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()">
+      <input id="filtro" placeholder="Já tenho essa carta? Busque nome ou local…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()">
       <select style="flex:none;width:auto" onchange="filtroRot=this.value;telaEstoqueLista()">
         ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
       </select></div>
@@ -439,7 +501,7 @@ function telaEstoque() {
 }
 function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
-  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)) && (!filtroRot || legal(c) === (filtroRot === "std")))
+  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && (!filtroRot || legal(c) === (filtroRot === "std")))
     .sort(([, a], [, b]) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
   vistos = lista.map(([id]) => id);
   $("lista").innerHTML = lista.length ? blocos(lista.map(([id, c]) => linhaEstoque(id, c, U)))
@@ -467,7 +529,8 @@ function abrirCarta(id) {
     <div class="row" style="margin:12px 0"><span>Tenho</span><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
     <div class="row"><input inputmode="decimal" placeholder="Preço R$ por cópia" value="${c.preco ? c.preco.toFixed(2).replace(".", ",") : ""}" onchange="definirPreco('${esc(id)}',this.value)">
       <a class="btn sec" style="flex:none;width:auto;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}">Ver na Liga</a></div>
-    <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Consulte na Liga e anote o preço aqui."}</p>
+    <p class="muted" style="margin:4px 0 0">${c.precoEm ? `Preço de mercado anotado em ${c.precoEm.split("-").reverse().join("/")}.` : "Preço de mercado: consulte na Liga e anote aqui."}</p>
+    ${c.qty ? `<div class="grp">Suas cópias (${c.qty})</div><p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}` : ""}
     ${dk ? `<div class="grp">Neste deck: ${dk.list[id] || 0} · side: ${dk.side?.[id] || 0}</div>
       <div class="row" style="margin-bottom:8px">
         ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">↓ Passar 1 pro side</button>` : ""}
@@ -478,6 +541,7 @@ function abrirCarta(id) {
     <div class="grp">Empréstimos</div>${D.emp.filter(e => e.card === id).map(e => `<div class="row" style="margin-bottom:6px"><span class="sub">${e.tipo === "saiu" ? `${e.n} com ${esc(e.pessoa)}` : `${e.n} de ${esc(e.pessoa)} (devolver)`}</span><button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`).join("") || `<p class="muted">Nenhum.</p>`}
     <div class="row"><button class="btn sec" onclick="registrarEmp('${esc(id)}','saiu')&&abrirCarta('${esc(id)}')">Emprestei</button><button class="btn sec" onclick="registrarEmp('${esc(id)}','entrou')&&abrirCarta('${esc(id)}')">Peguei</button></div>
     <button class="btn sec" style="margin-top:14px" onclick="dlgCarta.close();render()">Fechar</button>`;
+  resumoCopias(id);
   if (!dlg.open) dlg.showModal();
 }
 
@@ -516,7 +580,8 @@ function trocar(de, para) {
   } else {
     const n = Math.min(parseInt(prompt(`Quantas das suas ${a.qty} cópias são de ${b.set}?`, a.qty), 10), a.qty);
     if (!(n > 0)) return false;
-    a.qty -= n; b.qty += n;
+    const mov = copias(a).splice(a.qty - n, n); // anotações das cópias vão junto
+    a.qty -= n; copias(b).push(...mov); b.qty += n;
     toast(`${n}× movida${n > 1 ? "s" : ""} pra ${b.set}`);
   }
   salvar(); return true;
@@ -525,6 +590,8 @@ function trocar(de, para) {
 // ---------- cadastro por coleção: todas as cartas da coleção em ordem, toque = +1 ----------
 let setCartas = [];
 async function abrirPorColecao() {
+  document.querySelectorAll(".anotar").forEach(l => l.classList.remove("hide"));
+  document.querySelectorAll(".anotar input").forEach(x => x.checked = !!D.anotar);
   $("dlgSet").showModal();
   if ($("setSel").options.length) return;
   $("setMsg").textContent = "Carregando coleções…";
@@ -558,6 +625,7 @@ async function somarSet(id, n) {
   try {
     const c = await garantir(id);
     c.qty = Math.max(0, c.qty + n); salvar();
+    if (n > 0) anotarNova(id);
     const el = document.querySelector(`#setRes [data-c="${CSS.escape(id)}"]`);
     if (el) el.outerHTML = tileSet(setCartas.find(x => x.id === id));
   } catch { toast("Sem conexão — não deu pra buscar a carta."); }
@@ -565,6 +633,8 @@ async function somarSet(id, n) {
 
 // ---------- busca/cadastro ----------
 function abrirBusca(modo) {
+  document.querySelectorAll(".anotar").forEach(l => l.classList.toggle("hide", modo !== "estoque"));
+  document.querySelectorAll(".anotar input").forEach(x => x.checked = !!D.anotar);
   modoBusca = modo;
   $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck" }[modo];
   $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
@@ -600,7 +670,7 @@ function mostrarBusca() {
 async function escolher(id) {
   try {
     const c = await garantir(id);
-    if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); }
+    if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); salvar(); return anotarNova(id); }
     else if (modoBusca === "troca") { if (trocar(trocaDe, id)) { $("dlgBusca").close(); render(); abrirCarta(id); } return; }
     else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
     else if (modoBusca === "side") { const s = deckAberto.side ??= {}; s[id] = (s[id] || 0) + 1; toast(`${c.name}: ${s[id]} no side`); }

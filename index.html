@@ -68,6 +68,9 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .res{cursor:pointer;text-align:center;font-size:12px;line-height:1.25}
 .res img{width:100%;aspect-ratio:63/88;object-fit:cover;border-radius:6px;background:var(--line);display:block;margin-bottom:3px}
 .res:active{opacity:.6}
+.res .tw{position:relative}
+.res .qb{position:absolute;top:4px;right:4px;background:var(--ac);color:var(--ac-tx);border-radius:8px;padding:0 7px;font-weight:700;font-size:13px}
+.res .tag{margin:2px 1px 0}
 .grp{font-size:12px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px}
 nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
 nav button{flex:1;background:none;border:0;padding:10px 0 12px;font-size:12px;color:var(--tx3);cursor:pointer}
@@ -85,6 +88,7 @@ dialog h2{font-size:17px;margin-bottom:12px}
 <div class="wrap">
   <header>
     <div class="t"><h1 id="titulo">Estoque</h1><p id="sub"></p></div>
+    <button class="icobtn" id="btnVista" onclick="D.vista = D.vista === 'grade' ? 'lista' : 'grade'; salvar(); render()" aria-label="Trocar visualização"></button>
     <button class="icobtn" onclick="abrirAjustes()" aria-label="Ajustes">⚙</button>
   </header>
   <main id="tela"></main>
@@ -225,12 +229,19 @@ async function garantir(id) {
 // ---------- telas ----------
 function ir(a) { aba = a; deckAberto = null; render(); scrollTo(0, 0); }
 function render() {
+  $("btnVista").textContent = grade() ? "☰" : "▦";
+  $("btnVista").classList.toggle("hide", aba === "emp" || (aba === "decks" && !deckAberto));
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.a === aba));
   ({ estoque: telaEstoque, decks: deckAberto ? telaDeck : telaDecks, compras: telaCompras, emp: telaEmp })[aba]();
 }
 
+const grade = () => D.vista === "grade";
+const tile = (id, c, badge, sub) => `<div class="res" onclick="abrirCarta('${esc(id)}')"><div class="tw">${c.img ? `<img loading="lazy" src="${img(c)}" alt="">` : `<img alt="">`}<span class="qb">${badge}</span></div>
+  <b>${esc(c.name)}</b>${regTag(c)}<br>${sub}</div>`;
+const blocos = itens => grade() ? `<div class="grid" style="margin:0">${itens.join("")}</div>` : itens.join("");
 function linhaEstoque(id, c, U) {
   const em = usado(U, id), fora = somaEmp(id, "saiu"), livre = c.qty - em - fora;
+  if (grade()) return tile(id, c, c.qty, `<span class="muted">${Math.max(0, livre)} livre${livre === 1 ? "" : "s"}</span>`);
   return `<div class="lin">${thumb(c)}
     <div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
       <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
@@ -252,7 +263,7 @@ function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
   const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num}`).includes(f)))
     .sort(([, a], [, b]) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
-  $("lista").innerHTML = lista.length ? lista.map(([id, c]) => linhaEstoque(id, c, U)).join("")
+  $("lista").innerHTML = lista.length ? blocos(lista.map(([id, c]) => linhaEstoque(id, c, U)))
     : `<p class="muted">${f ? "Você não tem nenhuma carta com esse nome." : "Nenhuma carta cadastrada ainda."}</p>`;
 }
 
@@ -371,22 +382,24 @@ function telaDeck() {
   $("titulo").textContent = d.name; $("sub").textContent = `${st.total} cartas${d.sleeve ? " · " + d.sleeve : ""}`;
   const linhas = Object.entries(d.list).map(([id, n]) => ({ id, n, c: D.cards[id] }))
     .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
-  const html = linhas.map(({ id, n, c }) => {
+  const html = blocos(linhas.map(({ id, n, c }) => {
     const livre = Math.max(0, c.qty - usado(U, id, g)), falta = Math.max(0, n - livre);
     // emprestadas não estão na mão; pegas emprestado cobrem o que falta, mas ainda entram na compra
     const naMao = Math.max(0, livre - somaEmp(id, "saiu")), comOutro = Math.max(0, n - naMao) - falta, deOutro = Math.min(somaEmp(id, "entrou"), Math.max(0, n - naMao));
     const outros = decksDe(U, id, g);
     const st = !falta && !comOutro ? `<span class="tag ok">✓ tenho</span>`
       : `${falta ? `<span class="tag er">faltam ${falta}</span>${c.qty > livre ? ` <span class="muted">(${c.qty - livre} em ${esc(outros.join(", "))})</span>` : ""}` : ""}${comOutro ? `<span class="tag wa">${comOutro} com ${quem(id, "saiu")}</span>` : ""}${deOutro ? `<span class="tag wa">${deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
+    if (grade()) return tile(id, c, n, st);
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div><div class="sub">${st}</div></div>
       <div class="qt"><button onclick="mudaDeck('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="mudaDeck('${esc(id)}',1)">+</button></div></div>`;
-  }).join("");
+  }));
   $("tela").innerHTML = `
     <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>
     <div class="row" style="margin-bottom:10px">
       <button class="btn" onclick="abrirBusca('deck')">＋ Carta</button>
       <button class="btn sec" onclick="editarDeck()">Editar / colar lista</button></div>
+    <button class="btn sec" onclick="exportarDeck()" style="margin-bottom:10px">Exportar lista (copiar)</button>
     ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} pra fechar esse deck.</div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${html || `<p class="muted">Deck vazio.</p>`}
@@ -430,29 +443,46 @@ async function salvarDeck() {
 // Lista no formato do TCG Live / Limitless: "4 Arven SVI 166"
 const APELIDO = { "PR-SV": "SVP", "PR-ME": "MEP", "PR-SW": "SWSHP" };
 const BASICA = /^(basic\s+)?(\{.\}|grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy)\s+energy$/i;
-const setPorCodigo = {}, cartasDoSet = {};
+const setPorCodigo = {}, setsInfo = {};
+const infoSet = setId => setsInfo[setId] ??= getJSON(`${API}/en/sets/${encodeURIComponent(setId)}`);
 async function idDaCarta(cod, num) {
   cod = APELIDO[cod.toUpperCase()] || cod.toUpperCase();
   const setId = await (setPorCodigo[cod] ??= getJSON(`${API}/en/sets?abbreviation.official=${encodeURIComponent(cod)}`).then(l => l[0]?.id));
   if (!setId) return null;
-  const cartas = await (cartasDoSet[setId] ??= getJSON(`${API}/en/sets/${encodeURIComponent(setId)}`).then(s => s.cards));
+  const cartas = (await infoSet(setId)).cards;
   const c = cartas.find(c => c.localId.toUpperCase() === num.toUpperCase()) || cartas.find(c => parseInt(c.localId, 10) === parseInt(num, 10));
   return c?.id || null;
 }
 async function lerLista(txt) {
-  const list = {}, falhas = []; let energia = 0;
+  const list = {}, falhas = [], energiaTxt = []; let energia = 0;
   const linhas = txt.split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^(pok[eé]mon|trainer|energy|total)\b.*:/i.test(l) && !/^total/i.test(l));
   await Promise.all(linhas.map(async l => {
     const m = l.match(/^(\d+)\s+(.+?)\s+([A-Za-z0-9-]{2,8})\s+([A-Za-z]*\d+[A-Za-z]?)$/);
-    if (!m) { const e = l.match(/^(\d+)\s+(.+)$/); if (e && BASICA.test(e[2].trim())) energia += +e[1]; else falhas.push(l); return; }
+    if (!m) { const e = l.match(/^(\d+)\s+(.+)$/); if (e && BASICA.test(e[2].trim())) { energia += +e[1]; energiaTxt.push(l); } else falhas.push(l); return; }
     const [, n, nome, cod, num] = m;
-    if (BASICA.test(nome) || /^(SVE|MEE|SVEN)$/i.test(cod)) { energia += +n; return; }
+    if (BASICA.test(nome) || /^(SVE|MEE|SVEN)$/i.test(cod)) { energia += +n; energiaTxt.push(l); return; }
     const id = await idDaCarta(cod, num);
     if (!id) return falhas.push(l);
     await garantir(id);
     list[id] = (list[id] || 0) + +n;
   }));
-  return { list, energia, falhas };
+  return { list, energia, energiaTxt, falhas };
+}
+// Exporta no mesmo formato (nome em inglês + código da coleção) pra colar no TCG Live / Limitless.
+async function exportarDeck() {
+  const d = deckAberto, secoes = [["Pokémon", []], ["Trainer", []], ["Energy", []]];
+  let offline = false;
+  for (const [id, n] of Object.entries(d.list)) {
+    const c = D.cards[id], setId = id.slice(0, id.lastIndexOf("-"));
+    let cod = setId.toUpperCase(), nome = c.name;
+    try { const S = await infoSet(setId); cod = S.abbreviation?.official || cod; nome = S.cards.find(x => x.id === id)?.name || nome; }
+    catch { offline = true; delete setsInfo[setId]; }
+    secoes[Math.min(ordem(c), 2)][1].push(`${n} ${nome} ${cod} ${/^\d+$/.test(c.num) ? +c.num : c.num}`);
+  }
+  secoes[2][1].push(...(d.energiaTxt?.length ? d.energiaTxt : d.energia ? [`${d.energia} Basic Energy`] : []));
+  const txt = secoes.filter(([, l]) => l.length)
+    .map(([t, l]) => `${t}: ${l.reduce((s, x) => s + parseInt(x, 10), 0)}\n${l.join("\n")}`).join("\n\n");
+  navigator.clipboard.writeText(txt).then(() => toast(offline ? "Lista copiada (sem internet: nomes em português)" : "Lista copiada — é só colar no TCG Live"), () => prompt("Copie a lista:", txt));
 }
 
 // ---------- compras ----------
@@ -463,9 +493,9 @@ function telaCompras() {
   const total = itens.reduce((s, x) => s + x.n, 0);
   $("titulo").textContent = "Comprar"; $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} pra fechar os decks` : "nada faltando";
   $("tela").innerHTML = itens.length ? `<button class="btn" onclick="copiarCompras()" style="margin-bottom:12px">Copiar lista</button>
-    <div class="card">${itens.map(({ id, c, n }) => `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
+    <div class="card">${blocos(itens.map(({ id, c, n }) => grade() ? tile(id, c, n + "×", `<span class="muted">tenho ${c.qty}</span>`) : `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
       <div class="nm">${esc(c.name)}${regTag(c)}</div><div class="sub">${esc(c.set)} · nº ${esc(c.num)} · tenho ${c.qty}${somaEmp(id, "entrou") ? ` · pegou ${somaEmp(id, "entrou")} de ${quem(id, "entrou")}` : ""}</div>
-      <div class="sub">${esc(decksDe(U, id).join(", "))}</div></div><div class="qt"><b style="font-size:18px">${n}×</b></div></div>`).join("")}</div>`
+      <div class="sub">${esc(decksDe(U, id).join(", "))}</div></div><div class="qt"><b style="font-size:18px">${n}×</b></div></div>`))}</div>`
     : `<p class="muted">Todos os decks estão completos com o que você já tem. Se não está aqui, não precisa comprar.</p>`;
 }
 function copiarCompras() {

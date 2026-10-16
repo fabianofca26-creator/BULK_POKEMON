@@ -73,7 +73,7 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .res .qb{position:absolute;top:4px;right:4px;background:var(--ac);color:var(--ac-tx);border-radius:8px;padding:0 7px;font-weight:700;font-size:13px}
 .res .tag{margin:2px 1px 0}
 .en{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
-.ebtn{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;font-size:14px;flex:none}
+.ebtn{width:38px;height:38px;border-radius:50%;border:0;cursor:pointer;font-size:18px;flex:none}
 .tag.oc{background:#e3edfb;color:#1d4f91}
 .tag.px{background:#efe6fa;color:#5b2a8c;cursor:pointer}
 @media (prefers-color-scheme:dark){ .tag.oc{background:#16263d;color:#9cc2f0} .tag.px{background:#2a1d3a;color:#d3b3f5} }
@@ -210,9 +210,10 @@ const KEY = "pkst_v1";
 // cards: id TCGdex -> {name,set,num,reg,cat,img,qty}; decks: {id,name,sleeve,list:{cardId:n},energias:{tipo:n},falhas:[linhas]}
 let D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, JSON.parse(localStorage.getItem(KEY) || "{}"));
 
-// Energias básicas ficam no deck por tipo, fora do estoque. tipo -> [nome, cor, nº na coleção SVE]
-const ENERGIAS = { G: ["Grama", "#3f9b45", 1], R: ["Fogo", "#e0522c", 2], W: ["Água", "#3a86d6", 3], L: ["Raio", "#d9b21c", 4],
-  P: ["Psíquica", "#9a4fc2", 5], F: ["Luta", "#b0652f", 6], D: ["Escuridão", "#3d3f55", 7], M: ["Metal", "#8e98a4", 8], "?": ["básica (tipo?)", "#777", 0] };
+// Energias básicas ficam no deck por tipo, fora do estoque. tipo -> [nome, cor, nº na coleção SVE, símbolo]
+// ponytail: símbolo é emoji parecido com o do tipo (funciona offline); trocar por SVG se quiser o desenho oficial
+const ENERGIAS = { G: ["Grama", "#3f9b45", 1, "🍃"], R: ["Fogo", "#e0522c", 2, "🔥"], W: ["Água", "#3a86d6", 3, "💧"], L: ["Raio", "#d9b21c", 4, "⚡"],
+  P: ["Psíquica", "#9a4fc2", 5, "👁️"], F: ["Luta", "#b0652f", 6, "👊"], D: ["Escuridão", "#3d3f55", 7, "🌙"], M: ["Metal", "#8e98a4", 8, "⚙️"], "?": ["básica (tipo?)", "#777", 0, "?"] };
 const PALAVRA = { grass: "G", fire: "R", water: "W", lightning: "L", psychic: "P", fighting: "F", darkness: "D", metal: "M" };
 function tipoEnergia(l) {
   let m = l.match(/\{([GRWLPFDM])\}/i); if (m) return m[1].toUpperCase();
@@ -803,19 +804,21 @@ function telaDeck() {
       ${st.naoTenho ? `<b>${st.naoTenho}</b> você não tem` : ""}${st.naoTenho && st.ocupada ? " e " : ""}${st.ocupada ? `<b>${st.ocupada}</b> ${st.ocupada > 1 ? "estão ocupadas" : "está ocupada"} em outros decks` : ""}.
       ${st.naoTenho ? `<button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho as ${st.naoTenho}</button>` : ""}</div>` : ""}
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
-    <div class="card">${html || `<p class="muted">Deck vazio.</p>`}</div>
+    <div class="card">${linhas.length ? html : `<p class="muted">Deck vazio.</p>`}</div>
     <div class="grp">Side deck · techs (${nSide}) · fora das ${st.total}, não ocupam cartas</div>
     <div class="card">${nSide ? blocos(sides.map(({ id, n, c }) => linhaDeck(id, n, c, true))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. A seta ↑ passa uma cópia pro deck.</p>`}
       <button class="btn sec" style="margin-top:8px" onclick="abrirBusca('side')">＋ Tech no side</button></div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
     <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {
-      const [nome, cor] = ENERGIAS[t];
-      return grade() ? `<div class="res"><div class="tw"><div class="en" style="background:${cor};aspect-ratio:63/88;border-radius:6px">${t}</div><span class="qb">${n}</span></div><b>Energia ${nome}</b></div>`
-        : `<div class="lin"><div class="ph en" style="background:${cor}">${t}</div><div class="i"><div class="nm">Energia ${nome}</div></div>
-          <div class="qt"><button onclick="mudaEnergia('${t}',-1)">−</button><b>${n}</b><button onclick="mudaEnergia('${t}',1)">+</button></div></div>`;
+      const [nome, cor, , sim] = ENERGIAS[t];
+      // na grade: toque = +1, botão − tira uma; na lista: ✕ apaga o tipo inteiro do deck
+      return grade() ? `<div class="res" onclick="mudaEnergia('${t}',1)"><div class="tw"><div class="en" style="background:${cor};aspect-ratio:63/88;border-radius:6px;font-size:40px">${sim}</div><span class="qb">${n}</span>
+          <button class="menos" title="Tirar 1" onclick="event.stopPropagation();mudaEnergia('${t}',-1)">−</button></div><b>Energia ${nome}</b></div>`
+        : `<div class="lin"><div class="ph en" style="background:${cor};font-size:24px">${sim}</div><div class="i"><div class="nm">Energia ${nome}</div></div>
+          <div class="qt"><button onclick="mudaEnergia('${t}',-1)">−</button><b>${n}</b><button onclick="mudaEnergia('${t}',1)">+</button><button title="Apagar do deck" onclick="mudaEnergia('${t}',-${n})">✕</button></div></div>`;
     }))}
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><span class="muted" style="flex:none">Somar +1:</span>
-        ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${t}</button>`).join("")}</div></div>
+        ${"GRWLPFDM".split("").map(t => `<button class="ebtn en" style="background:${ENERGIAS[t][1]}" title="Energia ${ENERGIAS[t][0]}" onclick="mudaEnergia('${t}',1)">${ENERGIAS[t][3]}</button>`).join("")}</div></div>
     ${d.falhas?.length ? `<div class="card"><b>Não encontrei na base:</b>${d.falhas.map(l => `<div class="sub">${esc(l)}</div>`).join("")}<button class="btn sec" style="margin-top:8px" onclick="deckAberto.falhas=[];salvar();render()">Limpar aviso</button></div>` : ""}
     <button class="btn del" onclick="apagarDeck()" style="margin-top:6px">Apagar deck</button>`;
 }

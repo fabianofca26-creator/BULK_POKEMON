@@ -356,6 +356,12 @@ async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new E
 let setsCache = {};
 async function sets(lang) { return setsCache[lang] ??= getJSON(`${API}/${lang}/sets`).then(l => Object.fromEntries(l.map((s, i) => [s.id, { name: s.name, i }]))); }
 // Garante a carta no cadastro; nome em português quando a base tem, senão inglês.
+// A base em português às vezes está incompleta (ex.: Celebração de 30 Anos tinha 2 de 128 cartas).
+// Junta as duas: cada carta em português quando existe, senão em inglês; ordem da lista em inglês.
+function juntarIdiomas(pt, en) {
+  const P = new Map(pt.map(c => [c.id, c]));
+  return [...en.map(c => P.get(c.id) || c), ...pt.filter(c => !en.some(e => e.id === c.id))];
+}
 // Toques rápidos na mesma carta nova esperam a mesma busca, senão um apagava o outro.
 const buscando = {};
 async function garantir(id) {
@@ -607,8 +613,8 @@ async function carregarSet(id) {
   if (!id) return;
   $("setRes").innerHTML = ""; $("setMsg").textContent = "Carregando cartas…";
   try {
-    const lang = (await sets("pt"))[id] ? "pt" : "en";
-    setCartas = (await getJSON(`${API}/${lang}/sets/${encodeURIComponent(id)}`)).cards;
+    const [pt, en] = await Promise.all(["pt", "en"].map(l => getJSON(`${API}/${l}/sets/${encodeURIComponent(id)}`).then(s => s.cards).catch(() => [])));
+    setCartas = juntarIdiomas(pt, en);
     D.ultSet = id; localStorage.setItem(KEY, JSON.stringify(D));
     $("setMsg").textContent = `${setCartas.length} cartas. Toque pra somar +1, no − pra tirar.`;
     $("setRes").innerHTML = setCartas.map(tileSet).join("");
@@ -647,12 +653,13 @@ async function buscar() {
   $("buscaMsg").textContent = "Buscando…"; $("buscaRes").innerHTML = "";
   try {
     const q = `cards?name=${encodeURIComponent(nome)}${$("soStd").checked ? "&legal.standard=true" : ""}`;
-    let lang = "pt", r = await getJSON(`${API}/pt/${q}`);
-    if (!r.length) { lang = "en"; r = await getJSON(`${API}/en/${q}`); }
-    const S = await sets(lang), setDe = id => id.slice(0, id.lastIndexOf("-"));
+    const [pt, en] = await Promise.all(["pt", "en"].map(l => getJSON(`${API}/${l}/${q}`).catch(() => null)));
+    if (!pt && !en) throw 0;
+    let r = juntarIdiomas(pt || [], en || []);
+    const [Spt, Sen] = await Promise.all([sets("pt"), sets("en")]), setDe = id => id.slice(0, id.lastIndexOf("-"));
     if (num !== null) r = r.filter(c => parseInt(c.localId, 10) === num);
-    r.sort((a, b) => (S[setDe(b.id)]?.i ?? -1) - (S[setDe(a.id)]?.i ?? -1));
-    ultBusca = r.map(c => ({ ...c, setNome: S[setDe(c.id)]?.name || setDe(c.id) }));
+    r.sort((a, b) => (Sen[setDe(b.id)]?.i ?? -1) - (Sen[setDe(a.id)]?.i ?? -1));
+    ultBusca = r.map(c => ({ ...c, setNome: Spt[setDe(c.id)]?.name || Sen[setDe(c.id)]?.name || setDe(c.id) }));
     const nomes = [...new Set(ultBusca.map(c => c.setNome))];
     $("buscaSet").innerHTML = `<option value="">Todas as coleções (${nomes.length})</option>` + nomes.map(n => `<option>${esc(n)}</option>`).join("");
     $("buscaSet").classList.toggle("hide", nomes.length < 2);

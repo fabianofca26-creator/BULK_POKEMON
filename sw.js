@@ -1,6 +1,6 @@
 // A página vem pela rede primeiro (assim uma versão nova chega na hora) e cai
 // pro cache quando não há sinal — que é o caso na loja. O resto é cache-first.
-const CACHE = "estoque-pkm-v9";
+const CACHE = "estoque-pkm-v10";
 const ARQ = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", e => {

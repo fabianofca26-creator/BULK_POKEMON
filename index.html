@@ -311,6 +311,7 @@ let vistos = []; // ordem das cartas na tela atual, pras setas da janela da cart
 
 const salvar = () => {
   for (const c of Object.values(D.cards)) if (c.copias) copias(c);
+  eqIdx = null;
   D.salvoEm = new Date().toISOString(); localStorage.setItem(KEY, JSON.stringify(D)); agendarSync();
 };
 
@@ -403,16 +404,19 @@ const seletorCor = nome => `<input type="color" class="sw" title="Mudar a cor do
 function mudarCorSleeve(nome, cor) { (D.sleeves ??= {})[nome.trim().toLowerCase()] = cor; salvar(); render(); }
 function calcUso() {
   const U = {};
-  for (const d of D.decks.filter(d => !d.rascunho)) for (const [id, nDeck] of Object.entries(d.list)) {
-    const n = nDeck - (d.proxy?.[id] || 0); // proxy não ocupa carta de verdade
-    if (n <= 0) continue;
-    const u = ((U[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
-    u.n = Math.max(u.n, n); u.decks.push(d.name);
+  // conta por carta equivalente: duas impressões da mesma carta no deck somam (ex.: 1 Brave Bangle WHT + 1 PBL = 2)
+  for (const d of D.decks.filter(d => !d.rascunho)) {
+    const porEq = {};
+    for (const [id, nDeck] of Object.entries(d.list)) {
+      const n = nDeck - (d.proxy?.[id] || 0); // proxy não ocupa carta de verdade
+      if (n > 0) porEq[eqKey(id)] = (porEq[eqKey(id)] || 0) + n;
+    }
+    for (const [E, n] of Object.entries(porEq)) { const u = ((U[E] ??= {})[grupo(d)] ??= { n: 0, decks: [] }); u.n = Math.max(u.n, n); u.decks.push(d.name); }
   }
   return U;
 }
-const usado = (U, id, exceto) => Object.entries(U[id] || {}).reduce((s, [g, u]) => g === exceto ? s : s + u.n, 0);
-const decksDe = (U, id, exceto) => Object.entries(U[id] || {}).filter(([g]) => g !== exceto).flatMap(([, u]) => u.decks);
+const usado = (U, id, exceto) => Object.entries(U[eqKey(id)] || {}).reduce((s, [g, u]) => g === exceto ? s : s + u.n, 0);
+const decksDe = (U, id, exceto) => Object.entries(U[eqKey(id)] || {}).filter(([g]) => g !== exceto).flatMap(([, u]) => u.decks);
 
 // ---------- empréstimos ----------
 // tipo "saiu" = carta minha com outra pessoa; "entrou" = carta de outra pessoa comigo
@@ -470,19 +474,39 @@ const buscando = {};
 async function garantir(id) {
   if (D.cards[id]) return D.cards[id];
   const c = await (buscando[id] ??= getJSON(`${API}/pt/cards/${encodeURIComponent(id)}`).catch(() => getJSON(`${API}/en/cards/${encodeURIComponent(id)}`)).finally(() => delete buscando[id]));
+  eqIdx = null; clearTimeout(detalhesT); detalhesT = setTimeout(completarDetalhes, 1500); // assinatura de reprint vem da carta em inglês
   return D.cards[id] ??= { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", tipo: tipoDaCarta(c), img: c.image || "", qty: 0 };
 }
 // tipo do Pokémon / categoria do treinador / energia especial, sempre guardado em inglês (a base manda no idioma da carta)
 const TIPO_PT = { Planta: "Grass", Fogo: "Fire", "Água": "Water", "Elétrico": "Lightning", "Psíquico": "Psychic", Lutador: "Fighting", Sombrio: "Darkness",
   Metal: "Metal", "Dragão": "Dragon", Incolor: "Colorless", Fada: "Fairy", Apoiador: "Supporter", "Estádio": "Stadium", Ferramenta: "Tool", Item: "Item", Especial: "Special", Normal: "Normal" };
 const tipoDaCarta = c => { const t = c.types?.[0] || c.trainerType || c.energyType || ""; return TIPO_PT[t] || t; };
-// cartas cadastradas antes de existir o tipo: busca uma vez na base (em segundo plano)
-async function completarTipos() {
-  const faltam = Object.entries(D.cards).filter(([, c]) => c.tipo === undefined);
+// Cartas equivalentes (reprints): a mesma carta em outra coleção serve no deck.
+// Treinador/energia: mesmo nome em inglês. Pokémon: mesmo nome, PS, habilidades e ataques (Pikachu com ataque diferente é outra carta).
+const assinatura = c => !c.name ? undefined : norm(c.category)[0] === "p"
+  ? `p:${norm(c.name)}|${c.hp || ""}|${(c.abilities || []).map(a => norm(a.name)).join(",")}|${(c.attacks || []).map(a => norm(a.name)).join(",")}`
+  : `${norm(c.category || "?")[0]}:${norm(c.name)}`;
+const eqKey = id => D.cards[id]?.eq || id;
+let eqIdx = null; // eq -> ids das cartas cadastradas com essa assinatura (refeito quando muda o cadastro)
+const idsEq = id => (eqIdx ??= Object.keys(D.cards).reduce((m, k) => ((m[eqKey(k)] ??= []).push(k), m), {}))[eqKey(id)] || [id];
+const somaEq = (id, f) => idsEq(id).reduce((s, k) => s + f(k), 0);
+function ondeEstaoEq(id) {
+  const r = { livre: 0, col: 0, decks: {} };
+  for (const k of idsEq(id)) { const o = ondeEstao(D.cards[k]); r.livre += o.livre; r.col += o.col; for (const [dk, n] of Object.entries(o.decks)) r.decks[dk] = (r.decks[dk] || 0) + n; }
+  return r;
+}
+// tipo e assinatura vêm da carta em inglês; cartas cadastradas antes disso são completadas uma vez (em segundo plano)
+let detalhesT;
+async function completarDetalhes() {
+  const faltam = Object.entries(D.cards).filter(([, c]) => c.tipo === undefined || c.eq === undefined);
   if (!faltam.length || !navigator.onLine) return;
-  await emLotes(faltam, async ([id, c]) => { c.tipo = tipoDaCarta(await getJSON(`${API}/en/cards/${encodeURIComponent(id)}`).catch(() => ({}))); }, 6);
-  localStorage.setItem(KEY, JSON.stringify(D));
-  if (aba === "estoque") telaEstoqueLista();
+  await emLotes(faltam, async ([id, c]) => {
+    const en = await getJSON(`${API}/en/cards/${encodeURIComponent(id)}`).catch(() => null);
+    if (!en) return;
+    c.tipo = tipoDaCarta(en); c.eq = assinatura(en);
+  }, 6);
+  eqIdx = null; localStorage.setItem(KEY, JSON.stringify(D));
+  render();
 }
 // Blocos do estoque, nessa ordem: Pokémon por tipo, treinadores por categoria, energias especiais
 const BLOCOS = [["p:Grass", "Planta"], ["p:Fire", "Fogo"], ["p:Water", "Água"], ["p:Lightning", "Elétrico"], ["p:Psychic", "Psíquico"], ["p:Fighting", "Lutador"],
@@ -558,7 +582,7 @@ async function sincronizar(interativo) {
       const remoto = JSON.parse(await (await dapi(`files/${arq.id}?alt=media`)).text());
       const rs = remoto.salvoEm || "", ls = D.salvoEm || "";
       if (rs > ls) {
-        D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, remoto, { driveCid: remoto.driveCid || D.driveCid });
+        D = Object.assign({ cards: {}, decks: [], emp: [], marcas: "H I J", bk: 0 }, remoto, { driveCid: remoto.driveCid || D.driveCid }); eqIdx = null;
         deckAberto = D.decks.find(d => d.id === deckAberto?.id) || null;
         mudou = true;
       } else if (ls > rs) subir = true;
@@ -661,7 +685,7 @@ const secao = (k, titulo, resumo, corpo) => `<details class="sec" data-k="${k}"$
 function abrirCarta(id) {
   const c = D.cards[id], o = ondeEstao(c), em = emDecks(o), fora = somaEmp(id, "saiu"), livre = Math.max(0, o.livre - fora), cam = somaCaminho(id);
   const noDeck = aba === "decks" && !!(deckAberto?.list[id] || deckAberto?.side?.[id]), dk = noDeck ? deckAberto : null, px = dk?.proxy?.[id] || 0;
-  const decks = D.decks.filter(d => d.list[id] || d.side?.[id]), emps = D.emp.filter(e => e.card === id), pago = pagoTotal(c);
+  const decks = D.decks.filter(d => [...Object.keys(d.list), ...Object.keys(d.side || {})].some(k => eqKey(k) === eqKey(id))), emps = D.emp.filter(e => e.card === id), pago = pagoTotal(c);
   const dlg = $("dlgCarta"), pos = vistos.indexOf(id);
   dlg.dataset.id = id;
   dlg.innerHTML = `${pos >= 0 && vistos.length > 1 ? `<div class="navc"><button onclick="navCarta(-1)" aria-label="Carta anterior">‹</button>
@@ -686,7 +710,7 @@ function abrirCarta(id) {
       ${c.precoEm ? `<p class="muted" style="margin:4px 0 0">Anotado em ${c.precoEm.split("-").reverse().join("/")}.</p>` : ""}`)}
     ${secao("decks", "Decks", decks.length ? `${decks.length} deck${decks.length > 1 ? "s" : ""}` : "nenhum",
       (decks.map(d => `<div class="sub" style="margin-bottom:4px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span>
-        <b>${esc(d.name)}</b>: ${d.list[id] || 0}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}${d.rascunho ? " <span class=\"muted\">rascunho</span>" : ` · ${o.decks[d.id] || 0} colocada${o.decks[d.id] === 1 ? "" : "s"}`}</div>`).join("") || `<p class="muted">Nenhum deck usa essa carta.</p>`)
+        <b>${esc(d.name)}</b>: ${Object.entries(d.list).reduce((s, [k, n]) => eqKey(k) === eqKey(id) ? s + n : s, 0)}${d.list[id] ? "" : " <span class=\"muted\">(outra coleção)</span>"}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}${d.rascunho ? " <span class=\"muted\">rascunho</span>" : ` · ${o.decks[d.id] || 0} colocada${o.decks[d.id] === 1 ? "" : "s"}`}</div>`).join("") || `<p class="muted">Nenhum deck usa essa carta.</p>`)
       + `<button class="btn sec" style="margin-top:6px" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção (reprint)${noDeck ? " neste deck" : ""}</button>`)}
     ${secao("mais", "Compras e empréstimos", [cam && `${cam} a caminho`, emps.length && `${emps.length} empréstimo${emps.length > 1 ? "s" : ""}`].filter(Boolean).join(" · "),
       `${cam ? `<p class="sub"><span class="tag cm">${cam} a caminho</span> ${esc([...new Set(D.caminho.filter(e => e.card === id).map(e => e.de).filter(Boolean))].join(", "))}</p>` : ""}
@@ -709,14 +733,15 @@ function desenharOrg() {
   const quadro = (k, titulo, cor, nota) => { const chips = l.map((cp, i) => ondeDe(cp) === k ? chip(cp, i) : "").join("");
     return `<div class="card orgb${orgSel !== null && ondeDe(l[orgSel]) !== k ? " alvo" : ""}" style="border-left:6px solid ${cor}" onclick="moverCopia('${k}')">
       <div class="slh"><b>${titulo}</b><span class="muted" style="font-size:13px">${nota}</span></div><div class="chips">${chips || `<span class="muted" style="font-size:13px">nenhuma</span>`}</div></div>`; };
-  const decks = D.decks.filter(d => !d.rascunho && (d.list[id] || o.decks[d.id]));
+  // decks que usam essa carta em qualquer coleção (reprint)
+  const oe = ondeEstaoEq(id), decks = D.decks.filter(d => !d.rascunho && (usoPrincipal(d)[eqKey(id)] || o.decks[d.id]));
   $("locais").innerHTML = [...new Set(Object.values(D.cards).flatMap(x => (x.copias || []).map(y => y.local)).filter(Boolean))].map(v => `<option value="${esc(v)}">`).join("");
   $("dlgOrg").innerHTML = `<h2>Organizar cópias</h2>
     <p class="muted" style="margin-top:-8px">${esc(c.name)} · ${esc(c.set)} ${esc(c.num)} · ${c.qty} cópia${c.qty === 1 ? "" : "s"}</p>
     <p class="sub" style="margin-bottom:10px">${orgSel === null ? "Toque numa cópia e depois no quadro pra onde ela vai." : `<b>Cópia #${orgSel + 1} selecionada.</b> Toque no quadro de destino.`}</p>
     ${orgSel !== null ? `<div class="row" style="margin-bottom:12px"><input list="locais" placeholder="Guardada onde? (ex.: Pasta 1)" value="${esc(l[orgSel].local || "")}" onchange="guardarCopia(this.value)"></div>` : ""}
-    ${decks.map(d => { const precisa = (d.list[id] || 0) - (d.proxy?.[id] || 0), aqui = o.decks[d.id] || 0;
-      return quadro(d.id, esc(d.name), d.sleeve ? corSleeve(d.sleeve) : "var(--line2)", `precisa ${precisa} · ${aqui} aqui${aqui > precisa ? ` · ${aqui - precisa} a mais` : ""}`); }).join("")}
+    ${decks.map(d => { const precisa = usoPrincipal(d)[eqKey(id)] || 0, aqui = oe.decks[d.id] || 0, outra = aqui - (o.decks[d.id] || 0);
+      return quadro(d.id, esc(d.name), d.sleeve ? corSleeve(d.sleeve) : "var(--line2)", `precisa ${precisa} · ${aqui} aqui${outra ? ` (${outra} de outra coleção)` : ""}${aqui > precisa ? ` · ${aqui - precisa} a mais` : ""}`); }).join("")}
     ${quadro("col", "Na minha coleção", "#8a2a5c", "não vai pra deck nem troca")}
     ${quadro("", "Livres", "var(--ok-tx)", "podem ir pra deck")}
     ${decks.length ? "" : `<p class="muted">Nenhum deck usa essa carta.</p>`}
@@ -899,28 +924,37 @@ function telaDecks() {
 // "extra" = cópias que o deck principal já usa (o side conta depois). O que falta se divide em, nessa ordem:
 // colocar (tem livre no estoque) · comOutro (emprestada) · col (na sua coleção) · ocupada (em deck de outro sleeve) · aCaminho · naoTenho.
 // Rascunho não recebe cópias: conta as livres como "tenho".
+// Conta cópias de qualquer impressão equivalente (reprint). "extra" também inclui linhas anteriores do deck com a mesma carta.
 function situacao(d, U, id, n, extra = 0) {
-  const c = D.cards[id], g = grupo(d), o = ondeEstao(c);
+  const g = grupo(d), o = ondeEstaoEq(id), saiu = somaEq(id, k => somaEmp(k, "saiu"));
   const outrosDecks = Object.entries(o.decks).filter(([dk]) => grupo(deckPorId(dk)) !== g);
   const noGrupo = d.rascunho ? 0 : emDecks(o) - outrosDecks.reduce((s, [, k]) => s + k, 0);
   let tem = Math.min(n, Math.max(0, noGrupo - extra)), falta = n - tem, resto = falta;
-  const livres = Math.max(0, o.livre - somaEmp(id, "saiu") - (d.rascunho ? extra : 0));
+  const livres = Math.max(0, o.livre - saiu - (d.rascunho ? extra : 0));
   let colocar = Math.min(resto, livres); resto -= colocar;
   if (d.rascunho) { tem += colocar; falta -= colocar; colocar = 0; }
-  const comOutro = Math.min(resto, o.livre - Math.max(0, o.livre - somaEmp(id, "saiu"))); resto -= comOutro;
+  const comOutro = Math.min(resto, Math.min(o.livre, saiu)); resto -= comOutro;
   const col = Math.min(resto, o.col); resto -= col;
   const ocupada = Math.min(resto, outrosDecks.reduce((s, [, k]) => s + k, 0)); resto -= ocupada;
   // ponytail: o que está a caminho cobre o "não tenho" de cada deck sem dividir entre decks (dois decks podem contar a mesma encomenda)
-  const aCaminho = Math.min(resto, somaCaminho(id)), naoTenho = resto - aCaminho;
-  const deOutro = Math.min(somaEmp(id, "entrou"), naoTenho + aCaminho);
+  const aCaminho = Math.min(resto, somaEq(id, somaCaminho)), naoTenho = resto - aCaminho;
+  const deOutro = Math.min(somaEq(id, k => somaEmp(k, "entrou")), naoTenho + aCaminho);
   return { falta, tem, colocar, comOutro, col, ocupada, aCaminho, naoTenho, deOutro, outros: outrosDecks.map(([dk]) => deckPorId(dk).name) };
 }
 const tagsSituacao = (id, s) => !s.falta ? `<span class="tag ok">${ic("ok")} tenho</span>`
   : `${s.tem ? `<span class="tag ok">${s.tem} no deck</span>` : ""}${s.colocar ? `<span class="tag lv">${s.colocar} livre${s.colocar > 1 ? "s" : ""} no estoque</span>` : ""}${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.aCaminho ? `<span class="tag cm">${s.aCaminho} a caminho</span>` : ""}${s.col ? `<span class="tag cl">${s.col} na coleção</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
+// Linhas da mesma carta equivalente no deck (ex.: Brave Bangle de duas coleções) dividem as cópias: cada linha
+// recebe como "extra" o que as linhas anteriores dessa carta já pegaram. base = o que o deck principal já usa (pro side).
+function extrasDe(lista, base = {}) {
+  const visto = { ...base };
+  return lista.map(([id, n]) => { const E = eqKey(id), extra = visto[E] || 0; visto[E] = extra + n; return extra; });
+}
+const usoPrincipal = d => Object.entries(d.list).reduce((m, [id, n]) => (m[eqKey(id)] = (m[eqKey(id)] || 0) + n - (d.proxy?.[id] || 0), m), {});
 function statusDeck(d, U) {
   const st = { total: totalEnergia(d), falta: 0, colocar: 0, naoTenho: 0, ocupada: 0, col: 0, comOutro: 0, aCaminho: 0, rot: 0, px: 0, gasto: 0, vale: 0, semPreco: 0 };
-  for (const [id, n] of Object.entries(d.list)) {
-    const c = D.cards[id], p = d.proxy?.[id] || 0, s = situacao(d, U, id, n - p);
+  const linhas = Object.entries(d.list).map(([id, n]) => [id, n - (d.proxy?.[id] || 0)]), extras = extrasDe(linhas);
+  for (const [i, [id, n]] of Object.entries(d.list).entries()) {
+    const c = D.cards[id], p = d.proxy?.[id] || 0, s = situacao(d, U, id, n - p, extras[i]);
     st.total += n; st.px += p;
     for (const k of ["falta", "colocar", "naoTenho", "ocupada", "col", "comOutro", "aCaminho"]) st[k] += s[k];
     if (!legal(c)) st.rot += n;
@@ -933,23 +967,25 @@ function statusDeck(d, U) {
 const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
   : `${st.colocar ? `<span class="tag lv">${st.colocar} pra colocar</span>` : ""}${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.aCaminho ? `<span class="tag cm">${st.aCaminho} a caminho</span>` : ""}${st.col ? `<span class="tag cl">${st.col} na coleção</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} em outros decks</span>` : ""}`)
   + (st.px ? `<span class="tag px">${ic("imprimir")} ${st.px} proxy</span>` : "");
-// Coloca no deck aberto cópias livres dessa carta (as primeiras livres que achar)
+// Coloca no deck aberto cópias livres dessa carta: primeiro da mesma coleção, depois de reprints dela
 function colocar(id, k, silencioso) {
   const d = deckAberto; let n = 0;
-  for (const x of copias(D.cards[id])) if (n < k && (!x.onde || (x.onde !== "col" && !deckPorId(x.onde)))) { x.onde = d.id; n++; }
+  for (const kid of [id, ...idsEq(id).filter(x => x !== id)])
+    for (const x of copias(D.cards[kid])) if (n < k && (!x.onde || (x.onde !== "col" && !deckPorId(x.onde)))) { x.onde = d.id; n++; }
   if (!silencioso) { salvar(); render(); toast(`${n}× ${D.cards[id].name} colocada${n > 1 ? "s" : ""} em ${d.name}`); }
   return n;
 }
 function colocarTodas() {
   const d = deckAberto, U = calcUso(); let n = 0;
-  for (const [id, q] of Object.entries(d.list)) { const s = situacao(d, U, id, q - (d.proxy?.[id] || 0)); if (s.colocar) n += colocar(id, s.colocar, true); }
+  const linhas = Object.entries(d.list).map(([id, q]) => [id, q - (d.proxy?.[id] || 0)]), extras = extrasDe(linhas);
+  linhas.forEach(([id, q], i) => { const s = situacao(d, U, id, q, extras[i]); if (s.colocar) n += colocar(id, s.colocar, true); });
   salvar(); render(); toast(`${n} cartas colocadas em ${d.name}`);
 }
 // Cópias colocadas a mais do que o sleeve precisa (tirou carta do deck, virou proxy…) voltam a ficar livres.
 function soltarExcesso(d, id) {
   if (d.rascunho) return;
-  const g = grupo(d), precisa = Math.max(0, ...D.decks.filter(x => !x.rascunho && grupo(x) === g).map(x => (x.list[id] || 0) - (x.proxy?.[id] || 0)));
-  const l = copias(D.cards[id] || { qty: 0 }), noGrupo = l.filter(x => x.onde && x.onde !== "col" && deckPorId(x.onde) && grupo(deckPorId(x.onde)) === g);
+  const g = grupo(d), precisa = Math.max(0, ...D.decks.filter(x => !x.rascunho && grupo(x) === g).map(x => usoPrincipal(x)[eqKey(id)] || 0));
+  const l = idsEq(id).flatMap(k => copias(D.cards[k] || { qty: 0 })), noGrupo = l.filter(x => x.onde && x.onde !== "col" && deckPorId(x.onde) && grupo(deckPorId(x.onde)) === g);
   noGrupo.sort((a, b) => (b.onde === d.id) - (a.onde === d.id)).slice(0, Math.max(0, noGrupo.length - precisa)).forEach(x => delete x.onde);
 }
 // proxies marcadas no deck: nunca mais que as cópias da carta no deck
@@ -1012,10 +1048,12 @@ function telaDeck() {
   const sides = Object.entries(d.side || {}).map(([id, n]) => ({ id, n, c: D.cards[id] }))
     .sort((a, b) => ordem(a.c) - ordem(b.c) || a.c.name.localeCompare(b.c.name));
   vistos = [...new Set([...linhas, ...sides].map(x => x.id))];
+  // reprints: linhas da mesma carta dividem as cópias (o side vem depois do deck principal)
+  const extraMain = extrasDe(linhas.map(x => [x.id, x.n - (d.proxy?.[x.id] || 0)])), extraSide = extrasDe(sides.map(x => [x.id, x.n]), usoPrincipal(d));
   // uma linha de carta do deck ou do side; o side conta depois das cópias que o deck principal já usa
-  const linhaDeck = (id, n, c, side) => {
+  const linhaDeck = (id, n, c, side, extra) => {
     const p = side ? 0 : d.proxy?.[id] || 0;
-    const s = situacao(d, U, id, n - p, side ? (d.list[id] || 0) - (d.proxy?.[id] || 0) : 0);
+    const s = situacao(d, U, id, n - p, extra);
     const st = (n - p ? tagsSituacao(id, s) : "") + (p ? `<span class="tag px" title="Tirar 1 proxy" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1)">${ic("imprimir")} ${p} proxy</span>` : "");
     const tenho = (!side && s.colocar ? ` <button class="tenho" onclick="event.stopPropagation();colocar('${esc(id)}',${s.colocar})">${ic("descer")} Colocar ${s.colocar}</button>` : "")
       + (s.naoTenho ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${s.naoTenho},${!side})">＋ Tenho ${s.naoTenho}</button>` : "")
@@ -1027,7 +1065,7 @@ function telaDeck() {
       <div class="qt">${side ? `<button title="Passar 1 pro deck" aria-label="Passar 1 pro deck" onclick="moverSide('${esc(id)}',-1)">${ic("subir")}</button>`
         : `<button title="Passar 1 pro side" aria-label="Passar 1 pro side" onclick="moverSide('${esc(id)}',1)">${ic("descer")}</button>`}<button onclick="${muda}('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="${muda}('${esc(id)}',1)">+</button></div></div>`;
   };
-  const html = blocos(linhas.map(({ id, n, c }) => linhaDeck(id, n, c, false)));
+  const html = blocos(linhas.map(({ id, n, c }, i) => linhaDeck(id, n, c, false, extraMain[i])));
   const nSide = sides.reduce((s, x) => s + x.n, 0);
   $("tela").innerHTML = `
     <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>
@@ -1049,7 +1087,7 @@ function telaDeck() {
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${linhas.length ? html : `<p class="muted">Deck vazio.</p>`}</div>
     <div class="grp">Side deck · techs (${nSide}) · fora das ${st.total}, não ocupam cartas</div>
-    <div class="card">${nSide ? blocos(sides.map(({ id, n, c }) => linhaDeck(id, n, c, true))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. Nas cartas do deck, a seta pra baixo passa uma cópia pra cá; aqui, a seta pra cima devolve pro deck.</p>`}
+    <div class="card">${nSide ? blocos(sides.map(({ id, n, c }, i) => linhaDeck(id, n, c, true, extraSide[i]))) : `<p class="muted" style="margin:0 0 8px">Cartas que entram e saem da lista conforme o meta. Nas cartas do deck, a seta pra baixo passa uma cópia pra cá; aqui, a seta pra cima devolve pro deck.</p>`}
       <button class="btn sec" style="margin-top:8px" onclick="abrirBusca('side')">＋ Tech no side</button></div>
     <div class="grp">Energias básicas (${totalEnergia(d)}) · não entram no estoque</div>
     <div class="card">${blocos(Object.entries(d.energias || {}).map(([t, n]) => {
@@ -1089,7 +1127,8 @@ function moverSide(id, passo) {
 }
 function tenhoTodas() {
   const U = calcUso();
-  const faltas = Object.entries(deckAberto.list).map(([id, n]) => [id, situacao(deckAberto, U, id, n - (deckAberto.proxy?.[id] || 0)).naoTenho]).filter(([, f]) => f > 0);
+  const linhas = Object.entries(deckAberto.list).map(([id, n]) => [id, n - (deckAberto.proxy?.[id] || 0)]), extras = extrasDe(linhas);
+  const faltas = linhas.map(([id, n], i) => [id, situacao(deckAberto, U, id, n, extras[i]).naoTenho]).filter(([, f]) => f > 0);
   const total = faltas.reduce((s, [, f]) => s + f, 0);
   if (!confirm(`Cadastrar no estoque as ${total} cartas que faltam nesse deck?`)) return;
   for (const [id, f] of faltas) { D.cards[id].qty += f; if (!deckAberto.rascunho) colocar(id, f, true); }
@@ -1504,15 +1543,20 @@ function abrirImportar() {
 
 // ---------- compras ----------
 // cópias na coleção não contam: não vão pra deck
-const faltando = U => Object.entries(D.cards).map(([id, c]) => ({ id, c, n: usado(U, id) - (c.qty - ondeEstao(c).col) - somaCaminho(id) })).filter(x => x.n > 0)
-  .sort((a, b) => a.c.name.localeCompare(b.c.name));
+// conta por carta equivalente: tendo a Ultra Ball de outra coleção, não precisa comprar; aparece a impressão que o deck usa
+const porEq = f => { const feito = new Set(); return Object.keys(D.cards).map(id => { const E = eqKey(id); if (feito.has(E)) return null; feito.add(E); return f(id, idsEq(id)); }).filter(x => x && x.n > 0).sort((a, b) => a.c.name.localeCompare(b.c.name)); };
+const faltando = U => porEq((id, ids) => {
+  const rep = ids.find(k => D.decks.some(d => d.list[k])) || id;
+  return { id: rep, c: D.cards[rep], n: usado(U, id) - ids.reduce((s, k) => s + D.cards[k].qty - ondeEstao(D.cards[k]).col + somaCaminho(k), 0) };
+});
 // Sobrando: só cópias livres (fora de deck e da coleção). Do Standard guarda D.guardar cópias (ou o que os decks
 // precisam, se for mais); rotacionada guarda só o que algum deck precisa.
-const sobrando = U => Object.entries(D.cards).map(([id, c]) => {
-  const o = ondeEstao(c), fora = somaEmp(id, "saiu"), livre = o.livre - fora, precisa = usado(U, id);
-  const guarda = legal(c) ? Math.max(precisa, D.guardar ?? 4) : precisa;
-  return { id, c, n: Math.min(livre, c.qty - o.col - fora - guarda) };
-}).filter(x => x.n > 0).sort((a, b) => a.c.name.localeCompare(b.c.name));
+const sobrando = U => porEq((id, ids) => {
+  const o = ondeEstaoEq(id), fora = somaEq(id, k => somaEmp(k, "saiu")), livre = o.livre - fora, precisa = usado(U, id);
+  const guarda = ids.some(k => legal(D.cards[k])) ? Math.max(precisa, D.guardar ?? 4) : precisa;
+  const rep = ids.slice().sort((a, b) => ondeEstao(D.cards[b]).livre - ondeEstao(D.cards[a]).livre)[0];
+  return { id: rep, c: D.cards[rep], n: Math.min(livre, somaEq(id, k => D.cards[k].qty) - o.col - fora - guarda) };
+});
 const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function somaPreco(itens) {
   const com = itens.filter(x => x.c.preco);
@@ -1643,7 +1687,7 @@ function importar(f) {
 }
 
 document.querySelectorAll("[data-ic]").forEach(e => e.innerHTML = ic(e.dataset.ic));
-render(); nuvem(); completarTipos();
+render(); nuvem(); completarDetalhes();
 if (tokenValido()) sincronizar(false);
 // voltando pro app (ex.: depois de mexer no computador), puxa o que mudou
 document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sincronizar(false));

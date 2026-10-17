@@ -308,6 +308,11 @@ for (const d of D.decks) if (!d.energias) {
   const resto = (d.energia || 0) - totalEnergia(d); if (resto > 0) d.energias["?"] = resto;
   delete d.energia; delete d.energiaTxt;
 }
+// "já imprimi" de antes de existir proxy temporária: todas as proxies eram definitivas, então as marcas vão pra lista delas
+if (!D.migImp) {
+  if (D.impressas && !D.decks.some(d => Object.keys(d.proxyTemp || {}).length)) { D.impressasDef = { ...D.impressas, ...D.impressasDef }; D.impressas = {}; }
+  D.migImp = true;
+}
 let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", filtroSet = "", modoBusca = null, trocaDe = null;
 let vistos = []; // ordem das cartas na tela atual, pras setas da janela da carta
 
@@ -1038,35 +1043,45 @@ function mudaProxy(id, n, tipo = "temp") {
   soltarExcesso(d, id); salvar(); render();
   if ($("dlgCarta").open) abrirCarta(id);
 }
-// Lista de impressão: soma as proxies de todos os decks (mesmo sleeve conta o maior, como as cartas)
-function proxies() {
-  const P = {};
-  for (const d of D.decks) for (const [id, n] of Object.entries(d.proxy || {})) {
+// Lista de impressão, separada por tipo: temporárias (imprime em casa pra testar) e definitivas (manda imprimir em
+// qualidade melhor). Cada tipo tem a sua marcação de "já imprimi". Mesmo sleeve conta o maior, como as cartas.
+let tipoPx = "temp";
+const mapaImp = () => tipoPx === "def" ? (D.impressasDef ??= {}) : (D.impressas ??= {});
+function proxies(tipo = tipoPx) {
+  const P = {}, conta = tipo === "def" ? pxDef : pxTemp;
+  for (const d of D.decks) for (const id of Object.keys(d.proxy || {})) {
+    const n = conta(d, id); if (!n) continue;
     const u = ((P[id] ??= {})[grupo(d)] ??= { n: 0, decks: [] });
     u.n = Math.max(u.n, n); u.decks.push(d.name);
   }
   // n = o que ainda falta imprimir; imp = quantas dessa carta você já imprimiu (vale pra qualquer deck)
+  const imps = tipo === "def" ? D.impressasDef || {} : D.impressas || {};
   return Object.entries(P).map(([id, gs]) => {
-    const total = Object.values(gs).reduce((s, u) => s + u.n, 0), imp = Math.min(total, D.impressas?.[id] || 0);
+    const total = Object.values(gs).reduce((s, u) => s + u.n, 0), imp = Math.min(total, imps[id] || 0);
     return { id, c: D.cards[id], total, imp, n: total - imp, decks: Object.values(gs).flatMap(u => u.decks) };
   }).sort((a, b) => a.c.name.localeCompare(b.c.name));
 }
 function marcarImpressa(id, n) {
-  const m = D.impressas ??= {};
+  const m = mapaImp();
   m[id] = Math.max(0, (m[id] || 0) + n); if (!m[id]) delete m[id];
   salvar(); render();
 }
-// tira a marcação de proxy dessa carta em todos os decks (ela volta a aparecer como "falta" neles)
+// tira as proxies desse tipo dessa carta em todos os decks (ela volta a aparecer como "falta" neles)
 function tirarProxy(id) {
-  const ds = D.decks.filter(d => d.proxy?.[id]);
-  if (!confirm(`Tirar ${D.cards[id].name} das proxies${ds.length > 1 ? ` (${ds.map(d => d.name).join(", ")})` : ""}?`)) return;
-  for (const d of ds) { delete d.proxy[id]; delete d.proxyTemp?.[id]; }
+  const conta = tipoPx === "def" ? pxDef : pxTemp, ds = D.decks.filter(d => conta(d, id));
+  if (!confirm(`Tirar ${D.cards[id].name} das proxies ${tipoPx === "def" ? "definitivas" : "temporárias"}${ds.length > 1 ? ` (${ds.map(d => d.name).join(", ")})` : ""}?`)) return;
+  for (const d of ds) {
+    const fica = tipoPx === "def" ? pxTemp(d, id) : pxDef(d, id);
+    fica ? d.proxy[id] = fica : delete d.proxy[id];
+    tipoPx === "def" ? (fica && (d.proxyTemp[id] = fica)) : delete d.proxyTemp?.[id];
+  }
   salvar(); render();
 }
 function marcarTodasImpressas() {
   const pend = proxies().filter(x => x.n > 0), total = pend.reduce((s, x) => s + x.n, 0);
   if (!confirm(`Marcar as ${total} proxies como impressas?`)) return;
-  for (const x of pend) (D.impressas ??= {})[x.id] = (D.impressas[x.id] || 0) + x.n;
+  const m = mapaImp();
+  for (const x of pend) m[x.id] = (m[x.id] || 0) + x.n;
   salvar(); render(); toast(`${total} proxies marcadas como impressas`);
 }
 // Folha pra imprimir: cartas no tamanho real (63 × 88 mm), 9 por folha A4
@@ -1699,6 +1714,8 @@ function telaCompras() {
     caminho: "Nenhuma carta a caminho. Na lista de compras, o check marca a carta como comprada."
   };
   $("tela").innerHTML = segListas() +
+    (px ? `<div class="row" style="margin-bottom:12px">${[["temp", "Temporárias", "imprimir em casa pra testar"], ["def", "Definitivas", "mandar imprimir com qualidade"]].map(([t, nome, nota]) => { const q = proxies(t).reduce((s, x) => s + x.n, 0);
+      return `<button class="btn${tipoPx === t ? "" : " sec"}" style="padding:8px 6px;font-size:14px" onclick="tipoPx='${t}';render()">${nome}${q ? ` (${q})` : ""}<div style="font-size:11px;font-weight:400;opacity:.8">${nota}</div></button>`; }).join("")}</div>` : "") +
     (cm ? `<button class="btn sec" style="margin-bottom:12px" onclick="abrirBusca('caminho')">＋ Comprei outra carta</button>` : "") +
     (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()" title="Marcar todas como impressas">${ic("ok")} Todas</button>` : ""}</div>
       ${lista === "comprar" ? comprasPorDeck(U).map(G => { const p = somaPreco(G.itens), n = G.itens.reduce((s, x) => s + x.n, 0);

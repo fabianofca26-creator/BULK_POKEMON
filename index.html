@@ -96,6 +96,8 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .sec[open] summary::after{transform:rotate(-135deg)}
 .secc{padding-bottom:12px}
 .vb{display:inline-block;color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;vertical-align:1px}
+.aviso60{background:var(--er-tx);color:var(--bg);border-radius:var(--r);padding:16px;margin-bottom:12px;text-align:center;font-size:18px;font-weight:600}
+.aviso60 b{display:block;font-size:44px;line-height:1.1}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chipc{border:1px solid var(--line2);background:var(--card);color:var(--tx);border-radius:16px;padding:6px 11px;font-size:13px;cursor:pointer}
 .chipc.sel{outline:2px solid var(--ac);outline-offset:1px;background:var(--line)}
@@ -909,7 +911,7 @@ function telaDecks() {
   const linha = d => {
     const st = statusDeck(d, U);
     return `<div class="dk" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
-      <div class="sub muted">${st.total} cartas · ${tagsDeck(st)}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div>
+      <div class="sub muted">${st.total !== 60 ? `<span class="tag er" style="font-size:13px">${st.total}/60 cartas</span>` : "60 cartas"} · ${tagsDeck(st)}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div>
       ${st.gasto || st.vale ? `<div class="sub muted">gasto ${gasto(st.gasto)} · vale na Liga ${brl(st.vale)}</div>` : ""}</div>`;
   };
   const caixa = (titulo, borda, ds, nota, cor) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
@@ -1078,6 +1080,7 @@ function telaDeck() {
   const nSide = sides.reduce((s, x) => s + x.n, 0);
   $("tela").innerHTML = `
     <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>
+    ${st.total !== 60 ? `<div class="aviso60"><b>${st.total}</b>${st.total < 60 ? `faltam ${60 - st.total} carta${60 - st.total > 1 ? "s" : ""} pra fechar 60` : `${st.total - 60} carta${st.total - 60 > 1 ? "s" : ""} a mais — o deck tem que ter 60`}</div>` : ""}
     <div class="row" style="margin-bottom:10px">
       <button class="btn" onclick="abrirBusca('deck')">＋ Carta</button>
       <button class="btn sec" onclick="editarDeck()">Editar / colar lista</button></div>

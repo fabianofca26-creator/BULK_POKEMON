@@ -611,6 +611,7 @@ function agendarSync() {
 // ---------- telas ----------
 function ir(a) { aba = a; deckAberto = null; render(); scrollTo(0, 0); }
 function render() {
+  $("sub").onclick = null; // só o Estoque usa o toque no subtítulo (mostrar o gasto)
   $("btnVista").innerHTML = ic(grade() ? "lista" : "grade");
   $("btnVista").classList.toggle("hide", aba === "emp" || (aba === "decks" && !deckAberto));
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.a === aba));
@@ -639,7 +640,8 @@ function telaEstoque() {
   $("titulo").textContent = "Estoque";
   const valor = meus.reduce((s, [, c]) => s + (c.preco || 0) * c.qty, 0);
   const pago = meus.reduce((s, [, c]) => s + pagoTotal(c), 0);
-  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · vale " + brl(valor) : ""}${pago ? " · pago " + brl(pago) : ""}`;
+  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · vale " + brl(valor) : ""}${pago ? " · pago " + gasto(pago) : ""}`;
+  $("sub").onclick = pago ? () => { verGasto = !verGasto; telaEstoque(); } : null;
   $("tela").innerHTML = `
     <input id="filtro" placeholder="Já tenho essa carta? Busque nome ou local…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()" style="margin-bottom:8px">
     <div class="row" style="margin-bottom:10px">
@@ -908,7 +910,7 @@ function telaDecks() {
     const st = statusDeck(d, U);
     return `<div class="dk" onclick="abrirDeck('${d.id}')"><b>${esc(d.name)}</b>
       <div class="sub muted">${st.total} cartas · ${tagsDeck(st)}${st.rot ? `<span class="tag wa">${st.rot} fora do Standard</span>` : ""}</div>
-      ${st.gasto || st.vale ? `<div class="sub muted">gasto ${brl(st.gasto)} · vale na Liga ${brl(st.vale)}</div>` : ""}</div>`;
+      ${st.gasto || st.vale ? `<div class="sub muted">gasto ${gasto(st.gasto)} · vale na Liga ${brl(st.vale)}</div>` : ""}</div>`;
   };
   const caixa = (titulo, borda, ds, nota, cor) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
       ${cor ? seletorCor(titulo) : ""}<b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
@@ -1089,7 +1091,7 @@ function telaDeck() {
       ${st.colocar ? `<button class="tenho" style="margin-left:6px" onclick="colocarTodas()">${ic("descer")} Colocar as ${st.colocar} livres</button>` : ""}
       ${st.naoTenho ? `<button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho as ${st.naoTenho}</button>` : ""}</div>` : ""}
     <div class="card"><div class="row" style="align-items:flex-start">
-      <div><div class="muted" style="font-size:12px">Gasto com o deck</div><b style="font-size:18px">${brl(st.gasto)}</b><div class="sub muted">o que você pagou nas cópias colocadas nele (com frete)</div></div>
+      <div style="cursor:pointer" onclick="verGasto=!verGasto;render()"><div class="muted" style="font-size:12px">Gasto com o deck</div><b style="font-size:18px">${gasto(st.gasto)}</b><div class="sub muted">${verGasto ? "o que você pagou nas cópias colocadas nele (com frete)" : "toque pra ver"}</div></div>
       <div><div class="muted" style="font-size:12px">Vale na Liga</div><b style="font-size:18px">${brl(st.vale)}</b><div class="sub muted">${st.semPreco ? `${st.semPreco} carta${st.semPreco > 1 ? "s" : ""} sem preço anotado` : "todas com preço anotado"}</div></div></div></div>
     ${st.rot ? `<div class="card" style="background:var(--wa-bg);color:var(--wa-tx)"><b>${st.rot}</b> carta${st.rot > 1 ? "s" : ""} fora do Standard (marca ${esc(D.marcas)}).</div>` : ""}
     <div class="card">${linhas.length ? html : `<p class="muted">Deck vazio.</p>`}</div>
@@ -1564,6 +1566,9 @@ const sobrando = U => porEq((id, ids) => {
   const rep = ids.slice().sort((a, b) => ondeEstao(D.cards[b]).livre - ondeEstao(D.cards[a]).livre)[0];
   return { id: rep, c: D.cards[rep], n: Math.min(livre, somaEq(id, k => D.cards[k].qty) - o.col - fora - guarda) };
 });
+// totais de gasto ficam escondidos; um toque mostra (até fechar o app)
+let verGasto = false;
+const gasto = v => verGasto ? brl(v) : "R$ ••••";
 const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function somaPreco(itens) {
   const com = itens.filter(x => x.c.preco);

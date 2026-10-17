@@ -95,6 +95,7 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .sec summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--tx3);border-bottom:2px solid var(--tx3);transform:rotate(45deg) translateY(-3px);margin-left:4px}
 .sec[open] summary::after{transform:rotate(-135deg)}
 .secc{padding-bottom:12px}
+.vb{display:inline-block;color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;vertical-align:1px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chipc{border:1px solid var(--line2);background:var(--card);color:var(--tx);border-radius:16px;padding:6px 11px;font-size:13px;cursor:pointer}
 .chipc.sel{outline:2px solid var(--ac);outline-offset:1px;background:var(--line)}
@@ -314,6 +315,11 @@ const salvar = () => {
 
 // ---------- anotações por cópia: versão, quanto pagou, onde está guardada ----------
 const VERSOES = ["Normal", "Holo", "Reverse", "Reverse Poké Ball", "Reverse Master Ball", "Promo", "Outra"];
+// como cada versão aparece: nome curto e cor da marquinha (o valor guardado continua o mesmo)
+const VER = { Normal: ["Comum", "#8b929d"], Holo: ["Foil", "#c9a227"], Reverse: ["Reverse", "#2a7de1"], "Reverse Poké Ball": ["Poké Ball", "#d33b3b"],
+  "Reverse Master Ball": ["Master Ball", "#8e44ad"], Promo: ["Promo", "#16a085"], Outra: ["Outra", "#555b66"] };
+const nomeVer = v => (VER[v || "Normal"] || [v])[0];
+const marcaVer = v => { const [nome, cor] = VER[v || "Normal"] || [v, "#555b66"]; return `<span class="vb" style="background:${cor}">${esc(nome)}</span>`; };
 // A lista de cópias acompanha a quantidade; quando diminui, saem primeiro as cópias sem nada anotado.
 function copias(c) {
   const l = c.copias ??= [];
@@ -353,7 +359,7 @@ const pagoTotal = c => (c.copias || []).reduce((s, x) => s + (x.pago || 0) + (x.
 // "2 Reverse · em Pasta 1" — o que foi anotado nas cópias, pra mostrar na lista
 function resumoTexto(c) {
   const v = {}, locais = new Set();
-  for (const x of c.copias || []) { if (x.v) v[x.v] = (v[x.v] || 0) + 1; if (x.local) locais.add(x.local); }
+  for (const x of c.copias || []) { if (x.v) v[nomeVer(x.v)] = (v[nomeVer(x.v)] || 0) + 1; if (x.local) locais.add(x.local); }
   return [...Object.entries(v).map(([k, n]) => `${n} ${k}`), ...[...locais].map(l => "em " + l)].join(" · ");
 }
 function resumoCopias(id) {
@@ -364,8 +370,8 @@ function resumoCopias(id) {
 function htmlCopias(id) {
   const c = D.cards[id], l = copias(c);
   $("locais").innerHTML = [...new Set(Object.values(D.cards).flatMap(x => (x.copias || []).map(y => y.local)).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("");
-  return l.map((cp, i) => `<div class="cp"><b>${i + 1}</b>
-      <select onchange="setCopia('${esc(id)}',${i},'v',this.value)">${VERSOES.map(v => `<option${(cp.v || "Normal") === v ? " selected" : ""}>${v}</option>`).join("")}</select>
+  return l.map((cp, i) => `<div class="cp" style="border-left:4px solid ${(VER[cp.v || "Normal"] || [, "#555b66"])[1]};padding-left:6px"><b>${i + 1}</b>
+      <select onchange="setCopia('${esc(id)}',${i},'v',this.value)">${VERSOES.map(v => `<option value="${v}"${(cp.v || "Normal") === v ? " selected" : ""}>${nomeVer(v)}</option>`).join("")}</select>
       <input inputmode="decimal" placeholder="Pago R$" value="${cp.pago ? cp.pago.toFixed(2).replace(".", ",") : ""}" onchange="setCopia('${esc(id)}',${i},'pago',this.value)">
       <select class="loc" onchange="setCopia('${esc(id)}',${i},'onde',this.value)">
         <option value="">Livre (pode ir pra deck)</option><option value="col"${cp.onde === "col" ? " selected" : ""}>Na minha coleção</option>
@@ -698,7 +704,7 @@ function abrirOrganizar(id) { orgId = id; orgSel = null; desenharOrg(); if (!$("
 function desenharOrg() {
   const id = orgId, c = D.cards[id], l = copias(c), o = ondeEstao(c);
   const ondeDe = cp => cp.onde === "col" ? "col" : cp.onde && deckPorId(cp.onde) ? cp.onde : "";
-  const chip = (cp, i) => `<button class="chipc${orgSel === i ? " sel" : ""}" onclick="event.stopPropagation();orgSel=orgSel===${i}?null:${i};desenharOrg()">#${i + 1}${cp.v ? " " + esc(cp.v) : ""}${cp.pago ? " · " + brl(cp.pago) : ""}${cp.local ? " · " + esc(cp.local) : ""}</button>`;
+  const chip = (cp, i) => `<button class="chipc${orgSel === i ? " sel" : ""}" onclick="event.stopPropagation();orgSel=orgSel===${i}?null:${i};desenharOrg()">#${i + 1} ${marcaVer(cp.v)}${cp.pago ? " · " + brl(cp.pago) : ""}${cp.local ? " · " + esc(cp.local) : ""}</button>`;
   const quadro = (k, titulo, cor, nota) => { const chips = l.map((cp, i) => ondeDe(cp) === k ? chip(cp, i) : "").join("");
     return `<div class="card orgb${orgSel !== null && ondeDe(l[orgSel]) !== k ? " alvo" : ""}" style="border-left:6px solid ${cor}" onclick="moverCopia('${k}')">
       <div class="slh"><b>${titulo}</b><span class="muted" style="font-size:13px">${nota}</span></div><div class="chips">${chips || `<span class="muted" style="font-size:13px">nenhuma</span>`}</div></div>`; };
@@ -1457,7 +1463,7 @@ function abrirPed(num) {
     <input placeholder="Filtrar itens…" style="margin-bottom:8px" oninput="const q=norm(this.value);document.querySelectorAll('#dlgPed .pi').forEach(e=>e.classList.toggle('hide',!e.dataset.t.includes(q)))">
     ${ped.itens.map((it, k) => !it.n ? "" : `<div class="pi" data-t="${esc(norm(it.nome + " " + (it.cod || "") + " " + (it.num || "")))}"><div>
         <b>${it.n}×</b> ${esc(nomeItem(it))}
-        <div class="sub muted">${brl(it.preco)} cada${it.v ? " · " + esc(it.v) : ""}${it.energia ? " · energia básica" : !it.id ? " · fora do estoque" : ""}</div></div>
+        <div class="sub muted">${brl(it.preco)} cada${it.v ? " · " + esc(nomeVer(it.v)) : ""}${it.energia ? " · energia básica" : !it.id ? " · fora do estoque" : ""}</div></div>
       <input list="pessoas" placeholder="Você" value="${esc(it.dono || "")}" onchange="mudarDono('${num}',${k},this.value)">
       <div class="qt"><button title="Tirar 1 do pedido" aria-label="Tirar 1 do pedido" onclick="tirarDoPedido('${num}',${k},false)">−</button><button title="Tirar do pedido" aria-label="Tirar do pedido" onclick="tirarDoPedido('${num}',${k},true)">${ic("fechar")}</button></div></div>`).join("")}
     ${(D.caminho || []).some(e => e.ped === num) ? `<button class="btn" style="margin-top:12px" onclick="chegouPedido('${num}')">${ic("ok")} Chegou o pedido</button>` : ""}

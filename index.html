@@ -213,7 +213,8 @@ dialog h2{font-size:17px;margin-bottom:12px}
     <div class="row"><input id="dSleeve" list="sleeves" placeholder="ex.: Sleeve vermelho" oninput="corDoSleeve()"><input type="color" id="dCor" style="flex:none;width:52px;height:46px;padding:3px"></div>
     <datalist id="sleeves"></datalist></div>
   <label style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--tx);margin-bottom:12px"><input type="checkbox" id="dRasc" style="width:auto"> Rascunho — só estou planejando, não ocupa cartas do estoque</label>
-  <div class="field"><label>Colar lista (opcional, formato TCG Live / Limitless)</label><textarea id="dLista" placeholder="4 Dreepy TWM 128&#10;4 Arven SVI 166&#10;..."></textarea></div>
+  <div class="field"><label>Colar lista (opcional, formato TCG Live / Limitless) — ou <a href="#" onclick="event.preventDefault();$('fDeckForm').click()">escolher um arquivo .txt</a></label>
+    <input type="file" id="fDeckForm" accept=".txt,text/plain" class="hide" onchange="arquivoNoForm(this.files[0]);this.value=''"><textarea id="dLista" placeholder="4 Dreepy TWM 128&#10;4 Arven SVI 166&#10;..."></textarea></div>
   <p class="muted" id="deckMsg"></p>
   <div class="row"><button class="btn sec" onclick="dlgDeck.close()">Cancelar</button><button class="btn" id="deckOk" onclick="salvarDeck()">Salvar</button></div>
 </dialog>
@@ -886,7 +887,9 @@ function telaDecks() {
   };
   const caixa = (titulo, borda, ds, nota, cor) => `<div class="card" style="border-top:6px ${borda}"><div class="slh">
       ${cor ? seletorCor(titulo) : ""}<b>${esc(titulo)}</b><span class="muted" style="font-size:13px">${ds.length} deck${ds.length > 1 ? "s" : ""}${nota ? " · " + nota : ""}</span></div>${ds.map(linha).join("")}</div>`;
-  $("tela").innerHTML = `<button class="btn" onclick="novoDeck()" style="margin-bottom:12px">＋ Novo deck</button><div class="lst">` +
+  $("tela").innerHTML = `<div class="row" style="margin-bottom:12px"><button class="btn" onclick="novoDeck()">＋ Novo deck</button>
+    <button class="btn sec" onclick="$('fDeckTxt').click()">${ic("importar")} Importar .txt</button></div>
+    <input type="file" id="fDeckTxt" accept=".txt,text/plain" multiple class="hide" onchange="importarDecksTxt([...this.files]);this.value=''"><div class="lst">` +
     Object.values(sleeves).sort((a, b) => a.nome.localeCompare(b.nome)).map(s => caixa(s.nome, "solid " + corSleeve(s.nome), s.ds, s.ds.length > 1 ? "dividem as cartas" : "", true)).join("") +
     (soltos.length ? caixa("Sem sleeve", "solid var(--line2)", soltos, "cada um com as suas cartas") : "") +
     (rasc.length ? caixa("Rascunhos", "dashed var(--tx3)", rasc, "não ocupam cartas") : "") +
@@ -1127,6 +1130,28 @@ function corDoSleeve() {
 }
 const novoDeck = () => { deckAberto = null; prepararFormDeck(null); };
 const editarDeck = () => prepararFormDeck(deckAberto);
+// Deck vindo de arquivo .txt (o que o TCG Live / Limitless exportam): o nome do arquivo vira o nome do deck
+const nomeDoArquivo = a => a.name.replace(/\.txt$/i, "").trim() || "Deck importado";
+async function arquivoNoForm(a) {
+  if (!a) return;
+  $("dLista").value = await a.text();
+  if (!$("dNome").value.trim()) $("dNome").value = nomeDoArquivo(a);
+}
+async function importarDecksTxt(arquivos) {
+  if (!arquivos.length) return;
+  toast("Lendo os decks…");
+  const novos = [];
+  for (const a of arquivos) {
+    const d = { id: novoId(), name: nomeDoArquivo(a), sleeve: "", list: {}, energias: {}, falhas: [] };
+    try { Object.assign(d, await lerLista(await a.text())); }
+    catch { toast("Sem conexão com a base de cartas — tente de novo com internet."); return; }
+    D.decks.push(d); novos.push(d);
+  }
+  salvar();
+  if (novos.length === 1) abrirDeck(novos[0].id); else render();
+  const falhas = novos.reduce((s, d) => s + d.falhas.length, 0);
+  toast(`${novos.length} deck${novos.length > 1 ? "s" : ""} importado${novos.length > 1 ? "s" : ""}${falhas ? ` · ${falhas} linha${falhas > 1 ? "s" : ""} não reconhecida${falhas > 1 ? "s" : ""}` : ""}`);
+}
 async function salvarDeck() {
   const nome = $("dNome").value.trim(); if (!nome) return $("dNome").focus();
   let d = deckAberto;

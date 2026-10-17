@@ -410,7 +410,7 @@ function calcUso() {
   for (const d of D.decks.filter(d => !d.rascunho)) {
     const porEq = {};
     for (const [id, nDeck] of Object.entries(d.list)) {
-      const n = nDeck - (d.proxy?.[id] || 0); // proxy não ocupa carta de verdade
+      const n = nDeck - pxDef(d, id); // proxy definitiva: não vai comprar (a temporária continua na compra)
       if (n > 0) porEq[eqKey(id)] = (porEq[eqKey(id)] || 0) + n;
     }
     for (const [E, n] of Object.entries(porEq)) { const u = ((U[E] ??= {})[grupo(d)] ??= { n: 0, decks: [] }); u.n = Math.max(u.n, n); u.decks.push(d.name); }
@@ -435,6 +435,7 @@ function registrarEmp(id, tipo) {
   D.ultPessoa = pessoa; salvar(); toast(`${n}× ${c.name} ${tipo === "saiu" ? "com" : "de"} ${pessoa}`);
   return true;
 }
+function mudarDeckEmp(eid, deck) { const e = D.emp.find(x => x.id === eid); deck ? e.deck = deck : delete e.deck; salvar(); render(); }
 function devolver(eid) {
   const e = D.emp.find(x => x.id === eid), c = D.cards[e.card];
   if (!confirm(`Marcar ${e.n}× ${c.name} como devolvida (${e.pessoa})?`)) return;
@@ -455,7 +456,8 @@ function telaEmp() {
       const c = D.cards[e.card];
       return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(e.card)}')"><div class="nm">${esc(c.name)}</div>
         <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
-        <div class="sub">${e.tipo === "saiu" ? `<span class="tag wa">você emprestou ${e.n}</span>` : `<span class="tag er">você pegou ${e.n} — devolver</span>`} <span class="muted">${e.data.split("-").reverse().join("/")}</span></div></div>
+        <div class="sub">${e.tipo === "saiu" ? `<span class="tag wa">você emprestou ${e.n}</span>` : `<span class="tag er">você pegou ${e.n} — devolver</span>`} <span class="muted">${e.data.split("-").reverse().join("/")}</span></div>
+        ${e.tipo === "entrou" ? `<select style="margin-top:6px;padding:7px 9px;font-size:13px" onclick="event.stopPropagation()" onchange="mudarDeckEmp('${e.id}',this.value)"><option value="">Está comigo (fora de deck)</option>${D.decks.filter(x => !x.rascunho).map(x => `<option value="${x.id}"${e.deck === x.id ? " selected" : ""}>No deck ${esc(x.name)}</option>`).join("")}</select>` : ""}</div>
         <button class="btn sec" style="width:auto;flex:none;padding:8px 10px;font-size:13px" onclick="devolver('${e.id}')">Devolvida</button></div>`;
     }).join("") + "</div>").join("") + (D.emp.length ? "" : `<p class="muted">Nenhuma carta emprestada.</p>`);
 }
@@ -705,7 +707,7 @@ function abrirCarta(id) {
       <div class="row" style="margin-top:8px">
         ${dk.list[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',1)">${ic("descer")} 1 pro side</button>` : ""}
         ${dk.side?.[id] ? `<button class="btn sec" onclick="moverSide('${esc(id)}',-1)">${ic("subir")} 1 pro deck</button>` : ""}</div>
-      ${dk.list[id] ? `<div class="row" style="margin-top:8px"><span>${ic("imprimir")} Proxies</span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1)">−</button><b>${px}</b><button onclick="mudaProxy('${esc(id)}',1)">+</button></div></div>` : ""}</div>` : ""}
+      ${dk.list[id] ? [["temp", "Proxy temporária", "vai comprar", pxTemp(dk, id)], ["def", "Proxy definitiva", "não vai comprar", pxDef(dk, id)]].map(([t, nome, nota, q]) => `<div class="row" style="margin-top:8px"><span>${ic("imprimir")} ${nome} <span class="muted" style="font-size:12px">${nota}</span></span><div class="qt" style="flex:none"><button onclick="mudaProxy('${esc(id)}',-1,'${t}')">−</button><b>${q}</b><button onclick="mudaProxy('${esc(id)}',1,'${t}')">+</button></div></div>`).join("") : ""}</div>` : ""}
     ${c.qty ? secao("copias", `Cópias (${c.qty})`, esc([resumoTexto(c), pago && "pago " + brl(pago)].filter(Boolean).join(" · ")),
       `<p class="muted" id="cpResumo" style="margin:0 0 6px"></p>${htmlCopias(id)}`) : ""}
     ${secao("preco", "Preço na Liga", c.preco ? brl(c.preco) : "sem preço",
@@ -793,7 +795,7 @@ function trocar(de, para) {
   const a = D.cards[de], b = D.cards[para], d = deckAberto;
   if (aba === "decks" && d?.list[de]) {
     d.list[para] = (d.list[para] || 0) + d.list[de]; delete d.list[de];
-    for (const l of [d.side, d.proxy]) if (l?.[de]) { l[para] = (l[para] || 0) + l[de]; delete l[de]; }
+    for (const l of [d.side, d.proxy, d.proxyTemp]) if (l?.[de]) { l[para] = (l[para] || 0) + l[de]; delete l[de]; }
     soltarExcesso(d, de);
     toast(`${d.name}: agora usa ${b.name} de ${b.set}`);
   } else {
@@ -929,24 +931,33 @@ function telaDecks() {
 // colocar (tem livre no estoque) · comOutro (emprestada) · col (na sua coleção) · ocupada (em deck de outro sleeve) · aCaminho · naoTenho.
 // Rascunho não recebe cópias: conta as livres como "tenho".
 // Conta cópias de qualquer impressão equivalente (reprint). "extra" também inclui linhas anteriores do deck com a mesma carta.
+// Cartas que você pegou emprestado (empréstimo "entrou") também podem ir pra deck: e.deck = id do deck.
+const pegasEq = id => D.emp.filter(e => e.tipo === "entrou" && eqKey(e.card) === eqKey(id));
+const empLivre = e => !e.deck || !deckPorId(e.deck);
 function situacao(d, U, id, n, extra = 0) {
   const g = grupo(d), o = ondeEstaoEq(id), saiu = somaEq(id, k => somaEmp(k, "saiu"));
   const outrosDecks = Object.entries(o.decks).filter(([dk]) => grupo(deckPorId(dk)) !== g);
   const noGrupo = d.rascunho ? 0 : emDecks(o) - outrosDecks.reduce((s, [, k]) => s + k, 0);
-  let tem = Math.min(n, Math.max(0, noGrupo - extra)), falta = n - tem, resto = falta;
+  // emprestadas colocadas nesse sleeve contam como "no deck" (depois das suas cópias)
+  const pegas = pegasEq(id), pegasNoGrupo = d.rascunho ? 0 : pegas.filter(e => !empLivre(e) && grupo(deckPorId(e.deck)) === g).reduce((s, e) => s + e.n, 0);
+  const proprias = Math.min(n, Math.max(0, noGrupo - extra));
+  const deOutro = Math.min(n - proprias, Math.max(0, pegasNoGrupo - Math.max(0, extra - noGrupo)));
+  let tem = proprias + deOutro, falta = n - tem, resto = falta;
   const livres = Math.max(0, o.livre - saiu - (d.rascunho ? extra : 0));
   let colocar = Math.min(resto, livres); resto -= colocar;
-  if (d.rascunho) { tem += colocar; falta -= colocar; colocar = 0; }
+  // emprestadas que ainda não estão em deck nenhum: dá pra colocar
+  const colocarPega = Math.min(resto, pegas.filter(empLivre).reduce((s, e) => s + e.n, 0)); resto -= colocarPega;
+  if (d.rascunho) { tem += colocar + colocarPega; falta -= colocar + colocarPega; colocar = 0; }
   const comOutro = Math.min(resto, Math.min(o.livre, saiu)); resto -= comOutro;
   const col = Math.min(resto, o.col); resto -= col;
   const ocupada = Math.min(resto, outrosDecks.reduce((s, [, k]) => s + k, 0)); resto -= ocupada;
   // ponytail: o que está a caminho cobre o "não tenho" de cada deck sem dividir entre decks (dois decks podem contar a mesma encomenda)
   const aCaminho = Math.min(resto, somaEq(id, somaCaminho)), naoTenho = resto - aCaminho;
-  const deOutro = Math.min(somaEq(id, k => somaEmp(k, "entrou")), naoTenho + aCaminho);
-  return { falta, tem, colocar, comOutro, col, ocupada, aCaminho, naoTenho, deOutro, outros: outrosDecks.map(([dk]) => deckPorId(dk).name) };
+  const colocarEmp = d.rascunho ? 0 : colocarPega;
+  return { falta, tem, colocar, colocarEmp, comOutro, col, ocupada, aCaminho, naoTenho, deOutro, donos: [...new Set(pegas.map(e => e.pessoa))].join(", "), outros: outrosDecks.map(([dk]) => deckPorId(dk).name) };
 }
-const tagsSituacao = (id, s) => !s.falta ? `<span class="tag ok">${ic("ok")} tenho</span>`
-  : `${s.tem ? `<span class="tag ok">${s.tem} no deck</span>` : ""}${s.colocar ? `<span class="tag lv">${s.colocar} livre${s.colocar > 1 ? "s" : ""} no estoque</span>` : ""}${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.aCaminho ? `<span class="tag cm">${s.aCaminho} a caminho</span>` : ""}${s.col ? `<span class="tag cl">${s.col} na coleção</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${quem(id, "entrou")}</span>` : ""}`;
+const tagsSituacao = (id, s) => !s.falta ? `<span class="tag ok">${ic("ok")} tenho</span>${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${esc(s.donos)}</span>` : ""}`
+  : `${s.tem ? `<span class="tag ok">${s.tem} no deck</span>` : ""}${s.colocar ? `<span class="tag lv">${s.colocar} livre${s.colocar > 1 ? "s" : ""} no estoque</span>` : ""}${s.naoTenho ? `<span class="tag er">não tenho ${s.naoTenho}</span>` : ""}${s.aCaminho ? `<span class="tag cm">${s.aCaminho} a caminho</span>` : ""}${s.col ? `<span class="tag cl">${s.col} na coleção</span>` : ""}${s.ocupada ? `<span class="tag oc">${s.ocupada} em ${esc(s.outros.join(", "))}</span>` : ""}${s.comOutro ? `<span class="tag wa">${s.comOutro} com ${quem(id, "saiu")}</span>` : ""}${s.deOutro ? `<span class="tag wa">${s.deOutro} de ${esc(s.donos)}</span>` : ""}${s.colocarEmp ? `<span class="tag wa">${s.colocarEmp} emprestada${s.colocarEmp > 1 ? "s" : ""} livre${s.colocarEmp > 1 ? "s" : ""} (${esc(s.donos)})</span>` : ""}`;
 // Linhas da mesma carta equivalente no deck (ex.: Brave Bangle de duas coleções) dividem as cópias: cada linha
 // recebe como "extra" o que as linhas anteriores dessa carta já pegaram. base = o que o deck principal já usa (pro side).
 function extrasDe(lista, base = {}) {
@@ -955,12 +966,12 @@ function extrasDe(lista, base = {}) {
 }
 const usoPrincipal = d => Object.entries(d.list).reduce((m, [id, n]) => (m[eqKey(id)] = (m[eqKey(id)] || 0) + n - (d.proxy?.[id] || 0), m), {});
 function statusDeck(d, U) {
-  const st = { total: totalEnergia(d), falta: 0, colocar: 0, naoTenho: 0, ocupada: 0, col: 0, comOutro: 0, aCaminho: 0, rot: 0, px: 0, gasto: 0, vale: 0, semPreco: 0 };
+  const st = { total: totalEnergia(d), falta: 0, colocar: 0, colocarEmp: 0, naoTenho: 0, ocupada: 0, col: 0, comOutro: 0, aCaminho: 0, rot: 0, px: 0, gasto: 0, vale: 0, semPreco: 0 };
   const linhas = Object.entries(d.list).map(([id, n]) => [id, n - (d.proxy?.[id] || 0)]), extras = extrasDe(linhas);
   for (const [i, [id, n]] of Object.entries(d.list).entries()) {
     const c = D.cards[id], p = d.proxy?.[id] || 0, s = situacao(d, U, id, n - p, extras[i]);
     st.total += n; st.px += p;
-    for (const k of ["falta", "colocar", "naoTenho", "ocupada", "col", "comOutro", "aCaminho"]) st[k] += s[k];
+    for (const k of ["falta", "colocar", "colocarEmp", "naoTenho", "ocupada", "col", "comOutro", "aCaminho"]) st[k] += s[k];
     if (!legal(c)) st.rot += n;
     c.preco ? st.vale += c.preco * n : st.semPreco++;
   }
@@ -969,7 +980,7 @@ function statusDeck(d, U) {
   return st;
 }
 const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
-  : `${st.colocar ? `<span class="tag lv">${st.colocar} pra colocar</span>` : ""}${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.aCaminho ? `<span class="tag cm">${st.aCaminho} a caminho</span>` : ""}${st.col ? `<span class="tag cl">${st.col} na coleção</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} em outros decks</span>` : ""}`)
+  : `${st.colocar + st.colocarEmp ? `<span class="tag lv">${st.colocar + st.colocarEmp} pra colocar</span>` : ""}${st.naoTenho ? `<span class="tag er">não tenho ${st.naoTenho}</span>` : ""}${st.aCaminho ? `<span class="tag cm">${st.aCaminho} a caminho</span>` : ""}${st.col ? `<span class="tag cl">${st.col} na coleção</span>` : ""}${st.ocupada ? `<span class="tag oc">${st.ocupada} em outros decks</span>` : ""}`)
   + (st.px ? `<span class="tag px">${ic("imprimir")} ${st.px} proxy</span>` : "");
 // Coloca no deck aberto cópias livres dessa carta: primeiro da mesma coleção, depois de reprints dela
 function colocar(id, k, silencioso) {
@@ -979,10 +990,21 @@ function colocar(id, k, silencioso) {
   if (!silencioso) { salvar(); render(); toast(`${n}× ${D.cards[id].name} colocada${n > 1 ? "s" : ""} em ${d.name}`); }
   return n;
 }
+function colocarEmprestada(id, k, silencioso) {
+  const d = deckAberto; let n = 0;
+  for (const e of pegasEq(id).filter(empLivre)) {
+    if (n >= k) break;
+    const usa = Math.min(e.n, k - n);
+    if (usa < e.n) D.emp.push({ ...e, id: novoId(), n: e.n - usa }); // o resto do empréstimo continua livre
+    e.n = usa; e.deck = d.id; n += usa;
+  }
+  if (!silencioso) { salvar(); render(); toast(`${n} emprestada${n > 1 ? "s" : ""} colocada${n > 1 ? "s" : ""} em ${d.name}`); }
+  return n;
+}
 function colocarTodas() {
   const d = deckAberto, U = calcUso(); let n = 0;
   const linhas = Object.entries(d.list).map(([id, q]) => [id, q - (d.proxy?.[id] || 0)]), extras = extrasDe(linhas);
-  linhas.forEach(([id, q], i) => { const s = situacao(d, U, id, q, extras[i]); if (s.colocar) n += colocar(id, s.colocar, true); });
+  linhas.forEach(([id, q], i) => { let s = situacao(d, U, id, q, extras[i]); if (s.colocar) n += colocar(id, s.colocar, true); s = situacao(d, U, id, q, extras[i]); if (s.colocarEmp) n += colocarEmprestada(id, s.colocarEmp, true); });
   salvar(); render(); toast(`${n} cartas colocadas em ${d.name}`);
 }
 // Cópias colocadas a mais do que o sleeve precisa (tirou carta do deck, virou proxy…) voltam a ficar livres.
@@ -990,12 +1012,20 @@ function soltarExcesso(d, id) {
   if (d.rascunho) return;
   const g = grupo(d), precisa = Math.max(0, ...D.decks.filter(x => !x.rascunho && grupo(x) === g).map(x => usoPrincipal(x)[eqKey(id)] || 0));
   const l = idsEq(id).flatMap(k => copias(D.cards[k] || { qty: 0 })), noGrupo = l.filter(x => x.onde && x.onde !== "col" && deckPorId(x.onde) && grupo(deckPorId(x.onde)) === g);
-  noGrupo.sort((a, b) => (b.onde === d.id) - (a.onde === d.id)).slice(0, Math.max(0, noGrupo.length - precisa)).forEach(x => delete x.onde);
+  let sobra = noGrupo.length + pegasEq(id).filter(e => !empLivre(e) && grupo(deckPorId(e.deck)) === g).reduce((s, e) => s + e.n, 0) - precisa;
+  for (const e of pegasEq(id)) if (sobra > 0 && !empLivre(e) && grupo(deckPorId(e.deck)) === g) { delete e.deck; sobra -= e.n; } // emprestadas saem primeiro
+  noGrupo.sort((a, b) => (b.onde === d.id) - (a.onde === d.id)).slice(0, Math.max(0, sobra)).forEach(x => delete x.onde);
 }
-// proxies marcadas no deck: nunca mais que as cópias da carta no deck
-function mudaProxy(id, n) {
-  const d = deckAberto, p = d.proxy ??= {};
-  p[id] = Math.min(d.list[id] || 0, Math.max(0, (p[id] || 0) + n)); if (!p[id]) delete p[id];
+// Proxies: d.proxy = total no deck (cobrem a carta na hora de jogar); d.proxyTemp = quantas delas são temporárias.
+// Temporária = imprimiu pra testar e vai comprar (continua na lista de compras); definitiva = não vai comprar.
+const pxTemp = (d, id) => Math.min(d.proxyTemp?.[id] || 0, d.proxy?.[id] || 0);
+const pxDef = (d, id) => (d.proxy?.[id] || 0) - pxTemp(d, id);
+function mudaProxy(id, n, tipo = "temp") {
+  const d = deckAberto, temp = pxTemp(d, id), def = pxDef(d, id), lim = d.list[id] || 0;
+  const novoTemp = tipo === "temp" ? Math.min(lim - def, Math.max(0, temp + n)) : temp;
+  const novoDef = tipo === "def" ? Math.min(lim - temp, Math.max(0, def + n)) : def;
+  (d.proxy ??= {})[id] = novoTemp + novoDef; if (!d.proxy[id]) delete d.proxy[id];
+  (d.proxyTemp ??= {})[id] = novoTemp; if (!d.proxyTemp[id]) delete d.proxyTemp[id];
   soltarExcesso(d, id); salvar(); render();
   if ($("dlgCarta").open) abrirCarta(id);
 }
@@ -1021,7 +1051,7 @@ function marcarImpressa(id, n) {
 function tirarProxy(id) {
   const ds = D.decks.filter(d => d.proxy?.[id]);
   if (!confirm(`Tirar ${D.cards[id].name} das proxies${ds.length > 1 ? ` (${ds.map(d => d.name).join(", ")})` : ""}?`)) return;
-  for (const d of ds) delete d.proxy[id];
+  for (const d of ds) { delete d.proxy[id]; delete d.proxyTemp?.[id]; }
   salvar(); render();
 }
 function marcarTodasImpressas() {
@@ -1065,10 +1095,14 @@ function telaDeck() {
   const linhaDeck = (id, n, c, side, extra) => {
     const p = side ? 0 : d.proxy?.[id] || 0;
     const s = situacao(d, U, id, n - p, extra);
-    const st = (n - p ? tagsSituacao(id, s) : "") + (p ? `<span class="tag px" title="Tirar 1 proxy" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1)">${ic("imprimir")} ${p} proxy</span>` : "");
+    const pt = side ? 0 : pxTemp(d, id), pd = p - pt;
+    const st = (n - p ? tagsSituacao(id, s) : "")
+      + (pt ? `<span class="tag px" title="Tirar 1 proxy temporária" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1,'temp')">${ic("imprimir")} ${pt} proxy temporária</span>` : "")
+      + (pd ? `<span class="tag px" title="Tirar 1 proxy definitiva" onclick="event.stopPropagation();mudaProxy('${esc(id)}',-1,'def')">${ic("imprimir")} ${pd} proxy definitiva</span>` : "");
     const tenho = (!side && s.colocar ? ` <button class="tenho" onclick="event.stopPropagation();colocar('${esc(id)}',${s.colocar})">${ic("descer")} Colocar ${s.colocar}</button>` : "")
+      + (!side && s.colocarEmp ? ` <button class="tenho" onclick="event.stopPropagation();colocarEmprestada('${esc(id)}',${s.colocarEmp})">${ic("descer")} Colocar emprestada</button>` : "")
       + (s.naoTenho ? ` <button class="tenho" onclick="event.stopPropagation();jaTenho('${esc(id)}',${s.naoTenho},${!side})">＋ Tenho ${s.naoTenho}</button>` : "")
-      + (!side && s.falta ? ` <button class="tenho px" onclick="event.stopPropagation();mudaProxy('${esc(id)}',${s.falta})">${ic("imprimir")} Proxy</button>` : "");
+      + (!side && s.falta ? ` <button class="tenho px" onclick="event.stopPropagation();mudaProxy('${esc(id)}',${s.falta},'temp')">${ic("imprimir")} Proxy</button>` : "");
     if (grade()) return tile(id, c, n, st + tenho);
     const muda = side ? "mudaSide" : "mudaDeck";
     return `<div class="lin">${thumb(c)}<div class="i" onclick="abrirCarta('${esc(id)}')">
@@ -1089,9 +1123,9 @@ function telaDeck() {
       : d.sleeve ? `<div class="card" style="border-left:6px solid ${corSleeve(d.sleeve)}"><div class="slh">${seletorCor(d.sleeve)}<b>${esc(d.sleeve)}</b><span class="muted" style="font-size:13px">toque na bolinha pra mudar a cor</span></div>
         <div class="sub">${(() => { const outros = D.decks.filter(x => x !== d && !x.rascunho && grupo(x) === g).map(x => esc(x.name)); return outros.length ? `Divide o sleeve com: <b>${outros.join(", ")}</b>` : "Sozinho nesse sleeve."; })()}</div></div>` : ""}
     ${st.falta ? `<div class="card" style="background:var(--er-bg);color:var(--er-tx)">Faltam <b>${st.falta}</b> carta${st.falta > 1 ? "s" : ""} no deck:
-      ${[st.colocar && `<b>${st.colocar}</b> ${st.colocar > 1 ? "estão livres" : "está livre"} no estoque (é só colocar)`, st.naoTenho && `<b>${st.naoTenho}</b> você não tem`, st.aCaminho && `<b>${st.aCaminho}</b> a caminho`,
+      ${[st.colocar && `<b>${st.colocar}</b> ${st.colocar > 1 ? "estão livres" : "está livre"} no estoque (é só colocar)`, st.colocarEmp && `<b>${st.colocarEmp}</b> emprestada${st.colocarEmp > 1 ? "s" : ""} pra colocar`, st.naoTenho && `<b>${st.naoTenho}</b> você não tem`, st.aCaminho && `<b>${st.aCaminho}</b> a caminho`,
         st.col && `<b>${st.col}</b> na sua coleção`, st.ocupada && `<b>${st.ocupada}</b> em decks de outro sleeve`, st.comOutro && `<b>${st.comOutro}</b> emprestada${st.comOutro > 1 ? "s" : ""}`].filter(Boolean).join(", ")}.
-      ${st.colocar ? `<button class="tenho" style="margin-left:6px" onclick="colocarTodas()">${ic("descer")} Colocar as ${st.colocar} livres</button>` : ""}
+      ${st.colocar + st.colocarEmp ? `<button class="tenho" style="margin-left:6px" onclick="colocarTodas()">${ic("descer")} Colocar as ${st.colocar + st.colocarEmp} livres</button>` : ""}
       ${st.naoTenho ? `<button class="tenho" style="margin-left:6px" onclick="tenhoTodas()">＋ Já tenho as ${st.naoTenho}</button>` : ""}</div>` : ""}
     <div class="card"><div class="row" style="align-items:flex-start">
       <div style="cursor:pointer" onclick="verGasto=!verGasto;render()"><div class="muted" style="font-size:12px">Gasto com o deck</div><b style="font-size:18px">${gasto(st.gasto)}</b><div class="sub muted">${verGasto ? "o que você pagou nas cópias colocadas nele (com frete)" : "toque pra ver"}</div></div>
@@ -1159,11 +1193,13 @@ function mudaDeck(id, d) {
 function limitarProxy(d, id) {
   if (!d.proxy?.[id]) return;
   d.proxy[id] = Math.min(d.proxy[id], d.list[id] || 0); if (!d.proxy[id]) delete d.proxy[id];
+  if (d.proxyTemp?.[id]) { d.proxyTemp[id] = pxTemp(d, id); if (!d.proxyTemp[id]) delete d.proxyTemp[id]; }
 }
 function apagarDeck() {
   if (!confirm(`Apagar o deck "${deckAberto.name}"? As cartas continuam no estoque e voltam a ficar livres.`)) return;
   D.decks = D.decks.filter(d => d !== deckAberto);
   for (const c of Object.values(D.cards)) for (const x of c.copias || []) if (x.onde === deckAberto.id) delete x.onde; // cópias do deck voltam a ficar livres
+  for (const e of D.emp) if (e.deck === deckAberto.id) delete e.deck;
   salvar(); ir("decks");
 }
 function prepararFormDeck(d) {
@@ -1623,7 +1659,7 @@ function telaCompras() {
   const valor = p.valor ? ` · ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "";
   $("titulo").textContent = titulo;
   $("sub").textContent = total ? `${total} carta${total > 1 ? "s" : ""} ${frase}${valor}` : px && proxies().some(x => x.imp) ? "tudo impresso" : vazio;
-  const nota = ({ id, c, decks }) => lista === "comprar" ? decksDe(U, id).join(", ") : px ? decks.join(", ")
+  const nota = ({ id, c, decks, temp }) => lista === "comprar" ? (temp ? `tem ${temp} proxy temporária — compra pra trocar` : "") : px ? decks.join(", ")
     : usado(U, id) ? `${usado(U, id)} em deck` : legal(c) ? `guardando ${Math.min(c.qty, D.guardar ?? 4)}` : "rotacionada, nenhum deck usa";
   const preco = (c, n) => c.preco && !px ? brl(c.preco * n) : "";
   const item = x => {
@@ -1655,10 +1691,39 @@ function telaCompras() {
   $("tela").innerHTML = segListas() +
     (cm ? `<button class="btn sec" style="margin-bottom:12px" onclick="abrirBusca('caminho')">＋ Comprei outra carta</button>` : "") +
     (itens.length ? `<div class="row" style="margin-bottom:12px"><button class="btn sec" onclick="copiarLista()">Copiar lista</button>${px ? `<button class="btn" onclick="imprimirProxies()">${ic("imprimir")} Imprimir</button><button class="btn sec" onclick="marcarTodasImpressas()" title="Marcar todas como impressas">${ic("ok")} Todas</button>` : ""}</div>
-      <div class="card">${blocos(itens.map(item))}</div>` : `<p class="muted">${px && prontas.length ? "Tudo impresso." : vazios[lista]}</p>`) + impressas;
+      ${lista === "comprar" ? comprasPorDeck(U).map(G => { const p = somaPreco(G.itens), n = G.itens.reduce((s, x) => s + x.n, 0);
+        return `<div class="grp">${esc(G.titulo)} · ${n} carta${n > 1 ? "s" : ""}${p.valor ? " · " + brl(p.valor) : ""}</div><div class="card" style="border-left:6px solid ${G.cor}">${blocos(G.itens.map(item))}</div>`; }).join("")
+        : `<div class="card">${blocos(itens.map(item))}</div>`}` : `<p class="muted">${px && prontas.length ? "Tudo impresso." : vazios[lista]}</p>`) + impressas;
 }
 const segListas = () => `<div class="seg">` + Object.entries(LISTAS).map(([k, [rot]]) => `<button class="btn${k === lista ? "" : " sec"}" onclick="lista='${k}';render()">${rot}</button>`).join("") + `</div>`;
+// Lista de compras por deck. Pra cada carta, o total a comprar é o da conta geral (faltando); ele é dividido entre os sleeves
+// que precisam dela: as cópias livres que você já tem cobrem os primeiros decks da sua lista, a compra fica nos seguintes.
+const usoCompra = d => Object.entries(d.list).reduce((m, [id, n]) => (m[eqKey(id)] = (m[eqKey(id)] || 0) + n - pxDef(d, id), m), {});
+function comprasPorDeck(U) {
+  const decks = D.decks.filter(d => !d.rascunho), grupos = [];
+  for (const d of decks) { const g = grupo(d); let G = grupos.find(x => x.g === g); if (!G) grupos.push(G = { g, decks: [], itens: [] }); G.decks.push(d); }
+  for (const item of faltando(U)) {
+    const E = eqKey(item.id), ids = idsEq(item.id);
+    const precisa = grupos.map(G => Math.max(0, ...G.decks.map(d => usoCompra(d)[E] || 0)));
+    const colocadas = grupos.map(G => ids.reduce((s, k) => s + copias(D.cards[k]).filter(x => x.onde && G.decks.some(d => d.id === x.onde)).length, 0));
+    const deficit = precisa.map((n, i) => Math.max(0, n - colocadas[i]));
+    let cobrir = Math.max(0, deficit.reduce((s, n) => s + n, 0) - item.n), resta = item.n;
+    grupos.forEach((G, i) => {
+      const cobre = Math.min(deficit[i], cobrir); cobrir -= cobre;
+      const n = Math.min(deficit[i] - cobre, resta); resta -= n;
+      const temp = G.decks.reduce((s, d) => s + Object.keys(d.list).filter(k => eqKey(k) === E).reduce((t, k) => t + pxTemp(d, k), 0), 0);
+      if (n > 0) G.itens.push({ ...item, n, temp });
+    });
+    if (resta > 0) (grupos.find(G => G.itens.some(x => eqKey(x.id) === E)) || grupos[0])?.itens.push({ ...item, n: resta, temp: 0 });
+  }
+  return grupos.filter(G => G.itens.length).map(G => ({ ...G, titulo: G.decks.map(d => d.name).join(" / "), cor: G.decks[0].sleeve ? corSleeve(G.decks[0].sleeve) : "var(--line2)" }));
+}
 function copiarLista() {
+  if (lista === "comprar") {
+    const txt = comprasPorDeck(calcUso()).map(G => { const p = somaPreco(G.itens);
+      return `== ${G.titulo}\n` + G.itens.map(({ c, n }) => `${n}x ${c.name} (${c.set} ${c.num})${c.preco ? " — " + brl(c.preco * n) : ""}`).join("\n") + (p.valor ? `\nTotal: ${brl(p.valor)}` : ""); }).join("\n\n");
+    return navigator.clipboard.writeText(txt).then(() => toast("Lista copiada"), () => toast("Não deu pra copiar"));
+  }
   const itens = itensLista(calcUso()), px = lista === "proxy", cm = lista === "caminho", p = px ? { valor: 0 } : cm ? precoCaminho(itens) : somaPreco(itens);
   const txt = itens.map(({ c, n, e }) => `${n}x ${c.name} (${c.set} ${c.num})${cm ? (e.de ? " — " + e.de : "") + (e.pago ? " — " + brl(e.pago * n) : "") : c.preco && !px ? " — " + brl(c.preco * n) : ""}`).join("\n")
     + (p.valor ? `\nTotal: ${brl(p.valor)}${p.sem ? ` (+${p.sem} sem preço)` : ""}` : "");

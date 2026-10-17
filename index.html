@@ -1040,13 +1040,20 @@ function imprimirProxies() {
   w.document.close();
 }
 function abrirDeck(id) { aba = "decks"; deckAberto = D.decks.find(d => d.id === id); render(); scrollTo(0, 0); }
+// Ordem das cartas no deck: Pokémon, Apoiador, Item, Ferramenta, Estádio, outros treinadores, energias — e por nome dentro de cada uma
+const CAT_DECK = [["p", "Pokémon"], ["t:Supporter", "Apoiador"], ["t:Item", "Item"], ["t:Tool", "Ferramenta"], ["t:Stadium", "Estádio"], ["t", "Treinador"], ["e", "Energia"]];
+const catDeck = c => { const k = norm(c.cat)[0] + ":" + (c.tipo || ""), i = CAT_DECK.findIndex(([x]) => k === x || x === k[0]); return i < 0 ? CAT_DECK.length : i; };
+const porCategoria = (a, b) => catDeck(a.c) - catDeck(b.c) || a.c.name.localeCompare(b.c.name, "pt-BR") || a.c.set.localeCompare(b.c.set);
+// separa a lista em blocos com título ("Pokémon (22)", "Apoiador (8)"…)
+const blocosDeck = (itens, linha) => { const g = []; itens.forEach((x, i) => { const k = catDeck(x.c); (g.at(-1)?.k === k ? g.at(-1) : (g.push({ k, l: [] }), g.at(-1))).l.push([x, i]); });
+  return g.map(({ k, l }) => `<div class="grp" style="margin-top:${l[0][1] ? 14 : 0}px">${(CAT_DECK[k] || [, "Outras"])[1]} (${l.reduce((s, [x]) => s + x.n, 0)})</div>` + blocos(l.map(([x, i]) => linha(x, i)))).join(""); };
 function telaDeck() {
   const d = deckAberto, U = calcUso(), g = grupo(d), st = statusDeck(d, U);
   $("titulo").textContent = d.name; $("sub").textContent = `${st.total} cartas${d.sleeve ? " · " + d.sleeve : ""}`;
   const linhas = Object.entries(d.list).map(([id, n]) => ({ id, n, c: D.cards[id] }))
-    .sort((a, b) => ordem(a.c) - ordem(b.c) || b.n - a.n || a.c.name.localeCompare(b.c.name));
+    .sort(porCategoria);
   const sides = Object.entries(d.side || {}).map(([id, n]) => ({ id, n, c: D.cards[id] }))
-    .sort((a, b) => ordem(a.c) - ordem(b.c) || a.c.name.localeCompare(b.c.name));
+    .sort(porCategoria);
   vistos = [...new Set([...linhas, ...sides].map(x => x.id))];
   // reprints: linhas da mesma carta dividem as cópias (o side vem depois do deck principal)
   const extraMain = extrasDe(linhas.map(x => [x.id, x.n - (d.proxy?.[x.id] || 0)])), extraSide = extrasDe(sides.map(x => [x.id, x.n]), usoPrincipal(d));
@@ -1065,7 +1072,7 @@ function telaDeck() {
       <div class="qt">${side ? `<button title="Passar 1 pro deck" aria-label="Passar 1 pro deck" onclick="moverSide('${esc(id)}',-1)">${ic("subir")}</button>`
         : `<button title="Passar 1 pro side" aria-label="Passar 1 pro side" onclick="moverSide('${esc(id)}',1)">${ic("descer")}</button>`}<button onclick="${muda}('${esc(id)}',-1)">−</button><b>${n}</b><button onclick="${muda}('${esc(id)}',1)">+</button></div></div>`;
   };
-  const html = blocos(linhas.map(({ id, n, c }, i) => linhaDeck(id, n, c, false, extraMain[i])));
+  const html = blocosDeck(linhas, ({ id, n, c }, i) => linhaDeck(id, n, c, false, extraMain[i]));
   const nSide = sides.reduce((s, x) => s + x.n, 0);
   $("tela").innerHTML = `
     <button class="btn sec" onclick="ir('decks')" style="margin-bottom:10px">‹ Voltar aos decks</button>

@@ -715,6 +715,9 @@ function telaEstoque() {
       </select>
       <select onchange="filtroSet=this.value;telaEstoqueLista()">
         <option value="">Todas as coleções</option>${[...new Set(meus.map(([, c]) => c.set))].sort().map(s => `<option${s === filtroSet ? " selected" : ""}>${esc(s)}</option>`).join("")}
+      </select>
+      <select onchange="D.ordemEst=this.value;localStorage.setItem(KEY,JSON.stringify(D));telaEstoqueLista()">
+        ${ORDENS.map(([v, t]) => `<option value="${v}"${v === (D.ordemEst || "tipo") ? " selected" : ""}>Organizar por: ${t}</option>`).join("")}
       </select></div>
     <div class="row" style="margin-bottom:12px">
       <button class="btn" onclick="abrirBusca('estoque')">＋ Cadastrar carta</button>
@@ -723,17 +726,27 @@ function telaEstoque() {
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
+const ORDENS = [["tipo", "tipo"], ["nome", "nome"], ["colecao", "coleção"], ["qtd", "quantidade"], ["preco", "preço"], ["recentes", "últimas cadastradas"]];
 function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
   const passa = c => !filtroRot ? true : filtroRot === "col" ? ondeEstao(c).col > 0 : filtroRot === "nok" ? !c.ok : filtroRot === "livre" ? ondeEstao(c).livre > 0 : legal(c) === (filtroRot === "std");
   const ordemBloco = k => { const i = BLOCOS.findIndex(([b]) => b === k); return i >= 0 ? i : 50 + "pte".indexOf(k[0]); };
+  const ordem = D.ordemEst || "tipo", pos = Object.keys(D.cards);
   const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && passa(c) && (!filtroSet || c.set === filtroSet) && (!filtroCat || (filtroCat.length === 1 ? blocoDa(c)[0] === filtroCat : blocoDa(c) === filtroCat)))
-    .sort(([, a], [, b]) => ordemBloco(blocoDa(a)) - ordemBloco(blocoDa(b)) || a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
+    .sort(([ia, a], [ib, b]) => ({
+      tipo: () => ordemBloco(blocoDa(a)) - ordemBloco(blocoDa(b)),
+      colecao: () => a.set.localeCompare(b.set) || (parseInt(a.num, 10) || 0) - (parseInt(b.num, 10) || 0),
+      qtd: () => b.qty - a.qty,
+      preco: () => (b.preco || 0) - (a.preco || 0),
+      recentes: () => pos.indexOf(ib) - pos.indexOf(ia),
+      nome: () => 0 })[ordem]() || a.name.localeCompare(b.name, "pt-BR") || a.set.localeCompare(b.set));
   vistos = lista.map(([id]) => id);
-  // separa em blocos: Pokémon por tipo, treinadores por categoria, energias
+  // blocos com título: por tipo (Pokémon por tipo, treinadores por categoria…) ou por coleção; nas outras ordens, lista corrida
+  const chave = ordem === "tipo" ? ([, c]) => blocoDa(c) : ordem === "colecao" ? ([, c]) => c.set : () => "";
+  const titulo = k => ordem === "tipo" ? `${tituloBloco(k) ? tituloBloco(k) + " · " : ""}${nomeBloco(k)}` : esc(k);
   const grupos = [];
-  for (const [id, c] of lista) { const k = blocoDa(c); (grupos.at(-1)?.k === k ? grupos.at(-1) : (grupos.push({ k, l: [] }), grupos.at(-1))).l.push([id, c]); }
-  $("lista").innerHTML = lista.length ? grupos.map(({ k, l }) => `<div class="grp">${tituloBloco(k) ? tituloBloco(k) + " · " : ""}${nomeBloco(k)} (${l.reduce((s, [, c]) => s + c.qty, 0)})</div>`
+  for (const x of lista) { const k = chave(x); (grupos.at(-1)?.k === k ? grupos.at(-1) : (grupos.push({ k, l: [] }), grupos.at(-1))).l.push(x); }
+  $("lista").innerHTML = lista.length ? grupos.map(({ k, l }) => (k ? `<div class="grp">${titulo(k)} (${l.reduce((s, [, c]) => s + c.qty, 0)})</div>` : "")
       + blocos(l.map(([id, c]) => linhaEstoque(id, c, U)))).join("")
     : `<p class="muted">${f || filtroRot || filtroSet || filtroCat ? "Nenhuma carta sua com esse filtro." : "Nenhuma carta cadastrada ainda."}</p>`;
 }

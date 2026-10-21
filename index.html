@@ -98,6 +98,10 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .vb{display:inline-block;color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;vertical-align:1px}
 .aviso60{background:var(--er-tx);color:var(--bg);border-radius:var(--r);padding:16px;margin-bottom:12px;text-align:center;font-size:18px;font-weight:600}
 .aviso60 b{display:block;font-size:44px;line-height:1.1}
+.okb{width:34px;height:34px;border-radius:50%;border:2px solid var(--line2);background:transparent;color:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-right:6px;flex:none}
+.okb.sim{background:var(--ok-tx);border-color:var(--ok-tx);color:var(--bg)}
+.okb .ic{width:18px;height:18px}
+.res .okb{width:26px;height:26px;margin:2px 4px 0 0;vertical-align:middle}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chipc{border:1px solid var(--line2);background:var(--card);color:var(--tx);border-radius:16px;padding:6px 11px;font-size:13px;cursor:pointer}
 .chipc.sel{outline:2px solid var(--ac);outline-offset:1px;background:var(--line)}
@@ -309,6 +313,12 @@ for (const d of D.decks) if (!d.energias) {
   delete d.energia; delete d.energiaTxt;
 }
 // "já imprimi" de antes de existir proxy temporária: todas as proxies eram definitivas, então as marcas vão pra lista delas
+// "conferida" (c.ok): você checou que a carta está certa. As que já existiam começam sem conferir,
+// menos as que têm cópia colocada em deck; as cadastradas daqui pra frente já entram conferidas.
+if (!D.migOk) {
+  for (const c of Object.values(D.cards)) if (c.ok === undefined) c.ok = (c.copias || []).some(x => x.onde && x.onde !== "col" && D.decks.some(d => d.id === x.onde));
+  D.migOk = true;
+}
 if (!D.migImp) {
   if (D.impressas && !D.decks.some(d => Object.keys(d.proxyTemp || {}).length)) { D.impressasDef = { ...D.impressas, ...D.impressasDef }; D.impressas = {}; }
   D.migImp = true;
@@ -354,6 +364,7 @@ function anotarNova(id) {
 }
 function setCopia(id, i, campo, valor) {
   const cp = copias(D.cards[id])[i];
+  if (campo === "onde" && valor && valor !== "col") D.cards[id].ok = true; // colocou num deck: conferida
   if (campo === "pago") valor = parseFloat(String(valor).replace(/[^\d,.]/g, "").replace(",", ".")) || 0;
   else valor = String(valor).trim();
   if (valor && valor !== "Normal") cp[campo] = valor; else delete cp[campo];
@@ -492,7 +503,7 @@ async function garantir(id) {
   if (D.cards[id]) return D.cards[id];
   const c = await (buscando[id] ??= getJSON(`${API}/pt/cards/${encodeURIComponent(id)}`).catch(() => getJSON(`${API}/en/cards/${encodeURIComponent(id)}`)).finally(() => delete buscando[id]));
   eqIdx = null; clearTimeout(detalhesT); detalhesT = setTimeout(completarDetalhes, 1500); // assinatura de reprint vem da carta em inglês
-  return D.cards[id] ??= { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", tipo: tipoDaCarta(c), img: c.image || "", qty: 0 };
+  return D.cards[id] ??= { name: c.name, set: c.set?.name || "", num: c.localId, reg: c.regulationMark || "", cat: c.category || "", tipo: tipoDaCarta(c), img: c.image || "", qty: 0, ok: true };
 }
 // tipo do Pokémon / categoria do treinador / energia especial, sempre guardado em inglês (a base manda no idioma da carta)
 const TIPO_PT = { Planta: "Grass", Fogo: "Fire", "Água": "Water", "Elétrico": "Lightning", "Psíquico": "Psychic", Lutador: "Fighting", Sombrio: "Darkness",
@@ -639,31 +650,35 @@ const grade = () => D.vista === "grade";
 const tile = (id, c, badge, sub) => `<div class="res" onclick="abrirCarta('${esc(id)}')"><div class="tw">${c.img ? `<img loading="lazy" src="${img(c)}" alt="">` : `<img alt="">`}<span class="qb">${badge}</span></div>
   <b>${esc(c.name)}</b>${regTag(c)}<br>${sub}</div>`;
 const blocos = itens => grade() ? `<div class="grid" style="margin:0">${itens.join("")}</div>` : `<div class="lst">${itens.join("")}</div>`;
+const btnOk = (id, c) => `<button class="okb${c.ok ? " sim" : ""}" title="${c.ok ? "Conferida" : "Marcar como conferida"}" aria-label="Conferida" onclick="event.stopPropagation();conferir('${esc(id)}')">${ic("ok")}</button>`;
+function conferir(id) { const c = D.cards[id]; c.ok = !c.ok; salvar(); subEstoque(); telaEstoqueLista(); }
 function linhaEstoque(id, c, U) {
   const o = ondeEstao(c), em = emDecks(o), fora = somaEmp(id, "saiu"), livre = Math.max(0, o.livre - fora);
   const resumo = resumoTexto(c);
   const onde = [em && `${em} em deck`, o.col && `${o.col} na coleção`, fora && `${fora} com ${quem(id, "saiu")}`].filter(Boolean).join(" · ");
-  if (grade()) return tile(id, c, c.qty, `<span class="muted">${livre} livre${livre === 1 ? "" : "s"}${o.col ? ` · ${o.col} coleção` : ""}${resumo ? "<br>" + esc(resumo) : ""}</span>`);
+  if (grade()) return tile(id, c, c.qty, btnOk(id, c) + `<span class="muted">${livre} livre${livre === 1 ? "" : "s"}${o.col ? ` · ${o.col} coleção` : ""}${resumo ? "<br>" + esc(resumo) : ""}</span>`);
   return `<div class="lin">${thumb(c)}
     <div class="i" onclick="abrirCarta('${esc(id)}')"><div class="nm">${esc(c.name)}${regTag(c)}</div>
       <div class="sub">${esc(c.set)} · nº ${esc(c.num)}</div>
       ${resumo ? `<div class="sub">${esc(resumo)}</div>` : ""}
       <div class="sub">${onde ? `${onde} · ` : ""}<b>${livre} livre${livre === 1 ? "" : "s"}</b></div></div>
-    <div class="qt"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>`;
+    <div class="qt">${btnOk(id, c)}<button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>`;
 }
 
+function subEstoque() {
+  const meus = Object.values(D.cards).filter(c => c.qty > 0), valor = meus.reduce((s, c) => s + (c.preco || 0) * c.qty, 0), pago = meus.reduce((s, c) => s + pagoTotal(c), 0), nok = meus.filter(c => !c.ok).length;
+  $("sub").textContent = `${meus.reduce((s, c) => s + c.qty, 0)} cartas · ${meus.length} diferentes${nok ? ` · ${nok} pra conferir` : ""}${valor ? " · vale " + brl(valor) : ""}${pago ? " · pago " + gasto(pago) : ""}`;
+  $("sub").onclick = pago ? () => { verGasto = !verGasto; subEstoque(); } : null;
+}
 function telaEstoque() {
   const U = calcUso(), meus = Object.entries(D.cards).filter(([, c]) => c.qty > 0);
   $("titulo").textContent = "Estoque";
-  const valor = meus.reduce((s, [, c]) => s + (c.preco || 0) * c.qty, 0);
-  const pago = meus.reduce((s, [, c]) => s + pagoTotal(c), 0);
-  $("sub").textContent = `${meus.reduce((s, [, c]) => s + c.qty, 0)} cartas · ${meus.length} diferentes${valor ? " · vale " + brl(valor) : ""}${pago ? " · pago " + gasto(pago) : ""}`;
-  $("sub").onclick = pago ? () => { verGasto = !verGasto; telaEstoque(); } : null;
+  subEstoque();
   $("tela").innerHTML = `
     <input id="filtro" placeholder="Já tenho essa carta? Busque nome ou local…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()" style="margin-bottom:8px">
     <div class="row" style="margin-bottom:10px">
       <select onchange="filtroRot=this.value;telaEstoqueLista()">
-        ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"], ["col", "Na minha coleção"], ["livre", "Livres (fora de deck)"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
+        ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"], ["col", "Na minha coleção"], ["livre", "Livres (fora de deck)"], ["nok", "Não conferidas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
       </select>
       <select onchange="filtroSet=this.value;telaEstoqueLista()">
         <option value="">Todas as coleções</option>${[...new Set(meus.map(([, c]) => c.set))].sort().map(s => `<option${s === filtroSet ? " selected" : ""}>${esc(s)}</option>`).join("")}
@@ -677,7 +692,7 @@ function telaEstoque() {
 }
 function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
-  const passa = c => !filtroRot ? true : filtroRot === "col" ? ondeEstao(c).col > 0 : filtroRot === "livre" ? ondeEstao(c).livre > 0 : legal(c) === (filtroRot === "std");
+  const passa = c => !filtroRot ? true : filtroRot === "col" ? ondeEstao(c).col > 0 : filtroRot === "nok" ? !c.ok : filtroRot === "livre" ? ondeEstao(c).livre > 0 : legal(c) === (filtroRot === "std");
   const ordemBloco = k => { const i = BLOCOS.findIndex(([b]) => b === k); return i >= 0 ? i : 50 + "pte".indexOf(k[0]); };
   const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && passa(c) && (!filtroSet || c.set === filtroSet))
     .sort(([, a], [, b]) => ordemBloco(blocoDa(a)) - ordemBloco(blocoDa(b)) || a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
@@ -768,6 +783,7 @@ function desenharOrg() {
 }
 function moverCopia(k) {
   if (orgSel === null) return;
+  if (k && k !== "col") D.cards[orgId].ok = true;
   const cp = copias(D.cards[orgId])[orgSel];
   k ? cp.onde = k : delete cp.onde;
   orgSel = null; salvar(); desenharOrg();
@@ -999,6 +1015,7 @@ const tagsDeck = st => (!st.falta ? `<span class="tag ok">completo</span>`
 // Coloca no deck aberto cópias livres dessa carta: primeiro da mesma coleção, depois de reprints dela
 function colocar(id, k, silencioso) {
   const d = deckAberto; let n = 0;
+  if (k > 0) D.cards[id].ok = true;
   for (const kid of [id, ...idsEq(id).filter(x => x !== id)])
     for (const x of copias(D.cards[kid])) if (n < k && (!x.onde || (x.onde !== "col" && !deckPorId(x.onde)))) { x.onde = d.id; n++; }
   if (!silencioso) { salvar(); render(); toast(`${n}× ${D.cards[id].name} colocada${n > 1 ? "s" : ""} em ${d.name}`); }

@@ -516,7 +516,25 @@ const tipoDaCarta = c => { const t = c.types?.[0] || c.trainerType || c.energyTy
 const assinatura = c => !c.name ? undefined : norm(c.category)[0] === "p"
   ? `p:${norm(c.name)}|${c.hp || ""}|${(c.abilities || []).map(a => norm(a.name)).join(",")}|${(c.attacks || []).map(a => norm(a.name)).join(",")}`
   : `${norm(c.category || "?")[0]}:${norm(c.name)}`;
-const eqKey = id => D.cards[id]?.eq || id;
+// Equivalência: c.eqm (manual, por carta) vale mais que a automática (c.eq); D.eqAlias junta grupos que você uniu.
+const eqKey = id => { const c = D.cards[id]; if (c?.eqm) return c.eqm; const k = c?.eq || id; return D.eqAlias?.[k] || k; };
+// Unir manualmente: o grupo da carta "de" passa a ser o mesmo da carta "com" (cartas de uma coleção nova que a base
+// reconhecer como iguais entram juntas, porque o grupo inteiro é ligado).
+function unirReprint(de, com) {
+  const a = eqKey(de), b = eqKey(com), al = D.eqAlias ??= {};
+  if (a === b) return toast("Essas cartas já contam como a mesma.");
+  if (D.cards[de].eqm) { for (const k of idsEq(de)) D.cards[k].eqm = b; }
+  else { al[a] = b; for (const k in al) if (al[k] === a) al[k] = b; }
+  salvar(); toast(`${D.cards[de].name} e ${D.cards[com].name} agora contam como a mesma carta`);
+}
+// Separar: só essa carta sai do grupo (fica sozinha)
+function separarReprint(id, voltar) {
+  D.cards[id].eqm = "solo:" + id; salvar();
+  toast(`${D.cards[id].name} (${D.cards[id].set}) separada`);
+  if (voltar) abrirCarta(voltar);
+}
+let unirDe = null;
+function abrirUnir(id) { unirDe = id; $("dlgCarta").close(); abrirBusca("unir"); $("q").value = D.cards[id].name; buscar(); }
 let eqIdx = null; // eq -> ids das cartas cadastradas com essa assinatura (refeito quando muda o cadastro)
 const idsEq = id => (eqIdx ??= Object.keys(D.cards).reduce((m, k) => ((m[eqKey(k)] ??= []).push(k), m), {}))[eqKey(id)] || [id];
 const somaEq = (id, f) => idsEq(id).reduce((s, k) => s + f(k), 0);
@@ -755,6 +773,13 @@ function abrirCarta(id) {
       (decks.map(d => `<div class="sub" style="margin-bottom:4px"><span class="dot" style="background:${d.rascunho ? "transparent;border:2px dashed var(--tx3)" : d.sleeve ? corSleeve(d.sleeve) : "var(--line2)"}"></span>
         <b>${esc(d.name)}</b>: ${Object.entries(d.list).reduce((s, [k, n]) => eqKey(k) === eqKey(id) ? s + n : s, 0)}${d.list[id] ? "" : " <span class=\"muted\">(outra coleção)</span>"}${d.side?.[id] ? ` + ${d.side[id]} no side` : ""}${d.proxy?.[id] ? ` (${d.proxy[id]} proxy)` : ""}${d.rascunho ? " <span class=\"muted\">rascunho</span>" : ` · ${o.decks[d.id] || 0} colocada${o.decks[d.id] === 1 ? "" : "s"}`}</div>`).join("") || `<p class="muted">Nenhum deck usa essa carta.</p>`)
       + `<button class="btn sec" style="margin-top:6px" onclick="trocarColecao('${esc(id)}')">${ic("trocar")} Trocar coleção (reprint)${noDeck ? " neste deck" : ""}</button>`)}
+    ${(() => { const outras = idsEq(id).filter(k => k !== id);
+      return secao("reprints", "Outras coleções", outras.length ? `${outras.length} reprint${outras.length > 1 ? "s" : ""}` : "nenhuma",
+        (outras.map(k => { const x = D.cards[k]; return `<div class="row" style="margin-bottom:6px"><span class="sub"><b>${esc(x.name)}</b> · ${esc(x.set)} ${esc(x.num)}${x.qty ? ` · tenho ${x.qty}` : ""}</span>
+          <button class="btn sec" style="flex:none;width:auto;padding:6px 10px;font-size:13px" onclick="separarReprint('${esc(k)}','${esc(id)}')">Separar</button></div>`; }).join("")
+          || `<p class="muted" style="margin:0 0 6px">Nenhuma outra coleção conta como essa carta.</p>`)
+        + `<p class="muted" style="margin:4px 0 8px;font-size:13px">Cartas iguais em coleções diferentes contam como uma só nos decks, compras e troca.</p>
+          <button class="btn sec" onclick="abrirUnir('${esc(id)}')">Unir com outra coleção</button>`); })()}
     ${secao("mais", "Compras e empréstimos", [cam && `${cam} a caminho`, emps.length && `${emps.length} empréstimo${emps.length > 1 ? "s" : ""}`].filter(Boolean).join(" · "),
       `${cam ? `<p class="sub"><span class="tag cm">${cam} a caminho</span> ${esc([...new Set(D.caminho.filter(e => e.card === id).map(e => e.de).filter(Boolean))].join(", "))}</p>` : ""}
       <button class="btn sec" style="margin-bottom:10px" onclick="comprei('${esc(id)}')&&(render(),abrirCarta('${esc(id)}'))">${ic("caminhao")} Comprei, está a caminho</button>
@@ -895,7 +920,7 @@ function abrirBusca(modo) {
   document.querySelectorAll(".anotar").forEach(l => l.classList.toggle("hide", modo !== "estoque"));
   document.querySelectorAll(".anotar input").forEach(x => x.checked = !!D.anotar);
   modoBusca = modo;
-  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck", caminho: "Qual carta você comprou?", pedido: "Adicionar carta ao pedido" }[modo];
+  $("buscaTit").textContent = { estoque: "Cadastrar carta", deck: "Adicionar ao deck", saiu: "Qual carta você emprestou?", entrou: "Qual carta você pegou?", troca: "Escolha a outra coleção", side: "Adicionar ao side deck", caminho: "Qual carta você comprou?", pedido: "Adicionar carta ao pedido", unir: "Qual impressão é a mesma carta?" }[modo];
   $("buscaRes").innerHTML = ""; $("q").value = ""; $("buscaSet").classList.add("hide");
   $("dlgBusca").showModal(); $("q").focus();
 }
@@ -933,6 +958,7 @@ async function escolher(id) {
     if (modoBusca === "estoque") { c.qty++; toast(`${c.name} (${c.num}): agora você tem ${c.qty}`); salvar(); return anotarNova(id); }
     else if (modoBusca === "troca") { if (trocar(trocaDe, id)) { $("dlgBusca").close(); render(); abrirCarta(id); } return; }
     else if (modoBusca === "saiu" || modoBusca === "entrou") { if (registrarEmp(id, modoBusca)) { $("dlgBusca").close(); render(); } return; }
+    else if (modoBusca === "unir") { if (id === unirDe) return toast("Escolha uma carta de outra coleção."); unirReprint(unirDe, id); $("dlgBusca").close(); render(); abrirCarta(unirDe); return; }
     else if (modoBusca === "pedido") { if (adicionarAoPedido(id)) $("dlgBusca").close(); return; }
     else if (modoBusca === "caminho") { if (comprei(id)) { $("dlgBusca").close(); render(); } return; }
     else if (modoBusca === "side") { const s = deckAberto.side ??= {}; s[id] = (s[id] || 0) + 1; toast(`${c.name}: ${s[id]} no side`); }

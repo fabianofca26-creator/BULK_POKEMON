@@ -406,8 +406,14 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const img = (c, q = "low") => c.img ? `${c.img}/${q}.webp` : "";
 const thumb = c => c.img ? `<img loading="lazy" src="${img(c)}" alt="">` : `<div class="ph"></div>`;
-const legal = c => !!c.reg && D.marcas.toUpperCase().split(/[\s,]+/).includes(c.reg);
-const regTag = c => c.reg ? `<span class="tag ${legal(c) ? "ok" : "er"}">${esc(c.reg)}</span>` : "";
+// Rotação: a própria impressão vale se a marca dela está no Standard; e vale também se tem um reprint válido
+// (unida automática ou manualmente a uma carta de coleção válida).
+const legalPropria = c => !!c?.reg && D.marcas.toUpperCase().split(/[\s,]+/).includes(c.reg);
+let idPorCarta = new WeakMap();
+const idDe = c => { if (!idPorCarta.has(c)) { idPorCarta = new WeakMap(); for (const [k, v] of Object.entries(D.cards)) idPorCarta.set(v, k); } return idPorCarta.get(c); };
+const porReprint = c => !legalPropria(c) && !!idDe(c) && idsEq(idDe(c)).some(k => legalPropria(D.cards[k]));
+const legal = c => legalPropria(c) || porReprint(c);
+const regTag = c => c.reg || porReprint(c) ? `<span class="tag ${legal(c) ? "ok" : "er"}"${porReprint(c) ? ' title="Válida no Standard por reprint"' : ""}>${esc(c.reg || "?")}${porReprint(c) ? "*" : ""}</span>` : "";
 // a base manda a categoria no idioma da carta (Pokémon/Treinador/Energia ou Trainer/Energy)
 const ordem = c => ({ p: 0, t: 1, e: 2 })[norm(c.cat)[0]] ?? 9;
 let toastT;
@@ -753,7 +759,7 @@ function abrirCarta(id) {
       <span>${pos + 1} de ${vistos.length}</span><button onclick="navCarta(1)" aria-label="Próxima carta">›</button></div>` : ""}
     ${c.img ? `<img class="big" src="${img(c, "high")}" alt="">` : ""}
     <h2>${esc(c.name)}${regTag(c)}</h2>
-    <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)}${c.reg && !legal(c) ? " · fora do Standard" : ""}</p>
+    <p class="muted" style="margin-top:-8px">${esc(c.set)} · nº ${esc(c.num)}${porReprint(c) ? " · válida no Standard por reprint" : c.reg && !legal(c) ? " · fora do Standard" : ""}</p>
     <div class="row" style="margin:10px 0 6px"><b>Tenho</b><div class="qt" style="flex:none"><button onclick="mudaQtd('${esc(id)}',-1)">−</button><b>${c.qty}</b><button onclick="mudaQtd('${esc(id)}',1)">+</button></div></div>
     <div class="sub" style="margin-bottom:12px">${[livre && `<span class="tag lv">${livre} livre${livre > 1 ? "s" : ""}</span>`, em && `<span class="tag ok">${em} em deck</span>`, o.col && `<span class="tag cl">${o.col} na coleção</span>`,
       fora && `<span class="tag wa">${fora} emprestada${fora > 1 ? "s" : ""}</span>`, cam && `<span class="tag cm">${cam} a caminho</span>`].filter(Boolean).join("") || `<span class="muted">nenhuma cópia</span>`}</div>

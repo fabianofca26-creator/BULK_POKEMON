@@ -714,7 +714,8 @@ function telaEstoque() {
         ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"], ["col", "Na minha coleção"], ["livre", "Livres (fora de deck)"], ["nok", "Não conferidas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
       </select>
       <select onchange="filtroSet=this.value;telaEstoqueLista()">
-        <option value="">Todas as coleções</option>${[...new Set(meus.map(([, c]) => c.set))].sort().map(s => `<option${s === filtroSet ? " selected" : ""}>${esc(s)}</option>`).join("")}
+        <option value="">Todas as coleções</option>${(() => { const L = letrasDasColecoes(), sets = [...new Set(meus.map(([, c]) => c.set))].sort((a, b) => porLetra(L, a, b)), letras = [...new Set(sets.map(x => L[x] || ""))];
+          return letras.map(l => `<optgroup label="${l ? "Letra " + l : "Sem letra"}">${sets.filter(x => (L[x] || "") === l).map(x => `<option${x === filtroSet ? " selected" : ""}>${esc(x)}</option>`).join("")}</optgroup>`).join(""); })()}
       </select>
       <select onchange="D.ordemEst=this.value;localStorage.setItem(KEY,JSON.stringify(D));telaEstoqueLista()">
         ${ORDENS.map(([v, t]) => `<option value="${v}"${v === (D.ordemEst || "tipo") ? " selected" : ""}>Organizar por: ${t}</option>`).join("")}
@@ -726,16 +727,24 @@ function telaEstoque() {
     <div class="card" id="lista"></div>`;
   telaEstoqueLista();
 }
+// Letra de rotação de cada coleção: a mais comum entre as cartas dela que estão cadastradas
+function letrasDasColecoes() {
+  const cont = {};
+  for (const c of Object.values(D.cards)) if (c.reg) { const m = cont[c.set] ??= {}; m[c.reg] = (m[c.reg] || 0) + 1; }
+  return Object.fromEntries(Object.entries(cont).map(([set, m]) => [set, Object.entries(m).sort((a, b) => b[1] - a[1])[0][0]]));
+}
+// coleções da mais nova pra mais antiga (J, I, H…), e pelo nome dentro da mesma letra
+const porLetra = (L, a, b) => (L[b] || "").localeCompare(L[a] || "") || a.localeCompare(b, "pt-BR");
 const ORDENS = [["tipo", "tipo"], ["nome", "nome"], ["colecao", "coleção"], ["qtd", "quantidade"], ["preco", "preço"], ["recentes", "últimas cadastradas"]];
 function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
   const passa = c => !filtroRot ? true : filtroRot === "col" ? ondeEstao(c).col > 0 : filtroRot === "nok" ? !c.ok : filtroRot === "livre" ? ondeEstao(c).livre > 0 : legal(c) === (filtroRot === "std");
   const ordemBloco = k => { const i = BLOCOS.findIndex(([b]) => b === k); return i >= 0 ? i : 50 + "pte".indexOf(k[0]); };
-  const ordem = D.ordemEst || "tipo", pos = Object.keys(D.cards);
+  const ordem = D.ordemEst || "tipo", pos = Object.keys(D.cards), L = letrasDasColecoes();
   const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && passa(c) && (!filtroSet || c.set === filtroSet) && (!filtroCat || (filtroCat.length === 1 ? blocoDa(c)[0] === filtroCat : blocoDa(c) === filtroCat)))
     .sort(([ia, a], [ib, b]) => ({
       tipo: () => ordemBloco(blocoDa(a)) - ordemBloco(blocoDa(b)),
-      colecao: () => a.set.localeCompare(b.set) || (parseInt(a.num, 10) || 0) - (parseInt(b.num, 10) || 0),
+      colecao: () => porLetra(L, a.set, b.set) || (parseInt(a.num, 10) || 0) - (parseInt(b.num, 10) || 0),
       qtd: () => b.qty - a.qty,
       preco: () => (b.preco || 0) - (a.preco || 0),
       recentes: () => pos.indexOf(ib) - pos.indexOf(ia),
@@ -743,7 +752,7 @@ function telaEstoqueLista() {
   vistos = lista.map(([id]) => id);
   // blocos com título: por tipo (Pokémon por tipo, treinadores por categoria…) ou por coleção; nas outras ordens, lista corrida
   const chave = ordem === "tipo" ? ([, c]) => blocoDa(c) : ordem === "colecao" ? ([, c]) => c.set : () => "";
-  const titulo = k => ordem === "tipo" ? `${tituloBloco(k) ? tituloBloco(k) + " · " : ""}${nomeBloco(k)}` : esc(k);
+  const titulo = k => ordem === "tipo" ? `${tituloBloco(k) ? tituloBloco(k) + " · " : ""}${nomeBloco(k)}` : `${L[k] ? `<span class="tag ${D.marcas.toUpperCase().includes(L[k]) ? "ok" : "er"}" style="margin:0 4px 0 0">${L[k]}</span>` : ""}${esc(k)}`;
   const grupos = [];
   for (const x of lista) { const k = chave(x); (grupos.at(-1)?.k === k ? grupos.at(-1) : (grupos.push({ k, l: [] }), grupos.at(-1))).l.push(x); }
   $("lista").innerHTML = lista.length ? grupos.map(({ k, l }) => (k ? `<div class="grp">${titulo(k)} (${l.reduce((s, [, c]) => s + c.qty, 0)})</div>` : "")

@@ -102,6 +102,8 @@ input:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
 .okb.sim{background:var(--ok-tx);border-color:var(--ok-tx);color:var(--bg)}
 .okb .ic{width:18px;height:18px}
 .res .okb{width:26px;height:26px;margin:2px 4px 0 0;vertical-align:middle}
+.filtros{flex-wrap:wrap}
+.filtros select{flex:1 1 140px;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chipc{border:1px solid var(--line2);background:var(--card);color:var(--tx);border-radius:16px;padding:6px 11px;font-size:13px;cursor:pointer}
 .chipc.sel{outline:2px solid var(--ac);outline-offset:1px;background:var(--line)}
@@ -323,7 +325,7 @@ if (!D.migImp) {
   if (D.impressas && !D.decks.some(d => Object.keys(d.proxyTemp || {}).length)) { D.impressasDef = { ...D.impressas, ...D.impressasDef }; D.impressas = {}; }
   D.migImp = true;
 }
-let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", filtroSet = "", modoBusca = null, trocaDe = null;
+let aba = "estoque", deckAberto = null, filtro = "", filtroRot = "", filtroSet = "", filtroCat = "", modoBusca = null, trocaDe = null;
 let vistos = []; // ordem das cartas na tela atual, pras setas da janela da carta
 
 const salvar = () => {
@@ -676,7 +678,14 @@ function telaEstoque() {
   subEstoque();
   $("tela").innerHTML = `
     <input id="filtro" placeholder="Já tenho essa carta? Busque nome ou local…" value="${esc(filtro)}" oninput="filtro=this.value;telaEstoqueLista()" style="margin-bottom:8px">
-    <div class="row" style="margin-bottom:10px">
+    <div class="row filtros" style="margin-bottom:10px">
+      <select onchange="filtroCat=this.value;telaEstoqueLista()">
+        <option value="">Todos os tipos</option><option value="p"${filtroCat === "p" ? " selected" : ""}>Pokémon (todos)</option>
+        <optgroup label="Pokémon por tipo">${BLOCOS.filter(([k]) => k[0] === "p").map(([k, nome]) => `<option value="${k}"${k === filtroCat ? " selected" : ""}>${nome}</option>`).join("")}</optgroup>
+        <option value="t"${filtroCat === "t" ? " selected" : ""}>Treinadores (todos)</option>
+        <optgroup label="Treinadores">${BLOCOS.filter(([k]) => k[0] === "t").map(([k, nome]) => `<option value="${k}"${k === filtroCat ? " selected" : ""}>${nome}</option>`).join("")}</optgroup>
+        <option value="e:Special"${filtroCat === "e:Special" ? " selected" : ""}>Energia especial</option>
+      </select>
       <select onchange="filtroRot=this.value;telaEstoqueLista()">
         ${[["", "Todas"], ["std", "Standard"], ["fora", "Rotacionadas"], ["col", "Na minha coleção"], ["livre", "Livres (fora de deck)"], ["nok", "Não conferidas"]].map(([v, t]) => `<option value="${v}"${v === filtroRot ? " selected" : ""}>${t}</option>`).join("")}
       </select>
@@ -694,7 +703,7 @@ function telaEstoqueLista() {
   const U = calcUso(), f = norm(filtro);
   const passa = c => !filtroRot ? true : filtroRot === "col" ? ondeEstao(c).col > 0 : filtroRot === "nok" ? !c.ok : filtroRot === "livre" ? ondeEstao(c).livre > 0 : legal(c) === (filtroRot === "std");
   const ordemBloco = k => { const i = BLOCOS.findIndex(([b]) => b === k); return i >= 0 ? i : 50 + "pte".indexOf(k[0]); };
-  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && passa(c) && (!filtroSet || c.set === filtroSet))
+  const lista = Object.entries(D.cards).filter(([, c]) => c.qty > 0 && (!f || norm(`${c.name} ${c.set} ${c.num} ${resumoTexto(c)}`).includes(f)) && passa(c) && (!filtroSet || c.set === filtroSet) && (!filtroCat || (filtroCat.length === 1 ? blocoDa(c)[0] === filtroCat : blocoDa(c) === filtroCat)))
     .sort(([, a], [, b]) => ordemBloco(blocoDa(a)) - ordemBloco(blocoDa(b)) || a.name.localeCompare(b.name) || a.set.localeCompare(b.set));
   vistos = lista.map(([id]) => id);
   // separa em blocos: Pokémon por tipo, treinadores por categoria, energias
@@ -702,7 +711,7 @@ function telaEstoqueLista() {
   for (const [id, c] of lista) { const k = blocoDa(c); (grupos.at(-1)?.k === k ? grupos.at(-1) : (grupos.push({ k, l: [] }), grupos.at(-1))).l.push([id, c]); }
   $("lista").innerHTML = lista.length ? grupos.map(({ k, l }) => `<div class="grp">${tituloBloco(k) ? tituloBloco(k) + " · " : ""}${nomeBloco(k)} (${l.reduce((s, [, c]) => s + c.qty, 0)})</div>`
       + blocos(l.map(([id, c]) => linhaEstoque(id, c, U)))).join("")
-    : `<p class="muted">${f || filtroRot || filtroSet ? "Nenhuma carta sua com esse filtro." : "Nenhuma carta cadastrada ainda."}</p>`;
+    : `<p class="muted">${f || filtroRot || filtroSet || filtroCat ? "Nenhuma carta sua com esse filtro." : "Nenhuma carta cadastrada ainda."}</p>`;
 }
 
 function mudaQtd(id, d) {
